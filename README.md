@@ -1,3 +1,70 @@
+<h1 align="center">MUNDUS</h1>
+
+<div align="center">
+
+<p>A free, open source story-making suite made for writers, offering all the features you need to bring your story to life and always keep track of it.</p>
+
+<p>Brainstorming your ideas by talking, writing down a draft, detailing a profile for each character, place everything on a map, all you need in one single app, synced between devices, no more jumping between programs and websites.</p>
+
+<br>
+
+<p>Mundus is divided into 6 "Modes", 4 for the active creation process and 2 for managing it:</p>
+
+</div>
+
+<br>
+
+<p> 
+
+Everything begins in the Atlas, where you can create, edit/delete and see all your projects (Each one is an independent Mundus)
+
+  You can use the upload button in the top right to upload an individual Mundus' backup file, which you can create within
+
+</p>
+
+<img width="2560" height="1369" alt="MundusAtlas" src="https://github.com/user-attachments/assets/981dd335-7927-4dd8-af51-e332700c24b7" />
+
+<br><br>
+
+Opening a Mundus brings you to Writing Mode, where the magic happens, here you can find all the familiar features of a document editor, including:
+- Quick button to see the scenes in the current folder or add a new one
+- Auto format the active document to fix pagination errors
+- Import / Export the active document to various formats
+- A Dropdown menu to assign Draft / Review or Complete status to the active docuement
+- A checkpoint system to easily save and restore a document without exiting the app, useful for trying out versions
+- Auto save options with time instant / timed intervals or off options
+- Focus mode to hide the top toolbar
+- Zen mode to hide the entire UI, leaving you alone to focus on the text
+- Support for uploaded custom Fonts and GoogleFonts, in the font selection menu (both sync when cloud is configured)
+- Text colour and highlighting
+- A dictionary to add custom words or names (The names of characters or Codex entries you create are automatically added!)
+- Adding images to the document, resize and align them, including captions and an option to sync them online via free hosting
+- Search and replace throughout the active document
+- Speech-to-text via Whistle, fully local, useful for brainstorming sessions
+- A spelling check, spelling review drawer with the list of errors in your document and an autocorrect engine based off Harper
+- 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<br><br><br><br><br><br><br><br><br><br><br><br><br>
+
+
+
 MUNDUS INSTALLING & UPDATING GUIDE
 
 AUTOMATIC SETUP VIA SCRIPT
