@@ -1,0 +1,155 @@
+{
+  "entities": {
+    "UserDocument": {
+      "title": "UserDocument",
+      "description": "A writing document/file belonging to a novelist.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "summary": { "type": "string" },
+        "wordCount": { "type": "number" },
+        "characterCount": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "revision", "complete"] },
+        "fontFamily": { "type": "string" },
+        "fontSize": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "isFavorite": { "type": "boolean" },
+        "visualImages": { "type": "array" },
+        "category": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "content", "updatedAt"]
+    },
+    "UserSettings": {
+      "title": "UserSettings",
+      "description": "User preferences like theme and editor layout.",
+      "type": "object",
+      "properties": {
+        "theme": { "type": "string", "enum": ["light", "dark", "system"] },
+        "fontSize": { "type": "number" },
+        "fontFamily": { "type": "string" },
+        "lineHeight": { "type": "string" }
+      }
+    },
+    "DocumentSnapshot": {
+      "title": "DocumentSnapshot",
+      "description": "A named version checkpoint of a writing document.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "documentId": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "content": { "type": "string" },
+        "plainText": { "type": "string" },
+        "wordCount": { "type": "number" },
+        "characterCount": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "documentId", "userId", "name", "content", "createdAt"]
+    },
+    "Character": {
+      "title": "Character",
+      "description": "A story character with factions, families, story roles, lifecycle dates, and background dossier.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "aliases": { "type": "string" },
+        "sex": { "type": "string" },
+        "status": { "type": "string", "enum": ["alive", "deceased", "missing", "unknown"] },
+        "roles": { "type": "array" },
+        "factions": { "type": "array" },
+        "families": { "type": "array" },
+        "tags": { "type": "array" },
+        "relatives": { "type": "object" },
+        "birthTime": { "type": "string" },
+        "birthPlace": { "type": "string" },
+        "deathTime": { "type": "string" },
+        "deathPlace": { "type": "string" },
+        "appearance": { "type": "string" },
+        "overview": { "type": "string" },
+        "notes": { "type": "string" },
+        "avatarColor": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "name", "updatedAt"]
+    },
+    "ImgbbSettings": {
+      "title": "ImgbbSettings",
+      "description": "User ImgBB configuration for hosting character portraits and illustrations.",
+      "type": "object",
+      "properties": {
+        "apiKey": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "CodexEntry": {
+      "title": "CodexEntry",
+      "description": "Lore dossier entry (factions, locations, magic, history, etc.)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "overview": { "type": "string" },
+        "content": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "themeColor": { "type": "string" },
+        "tags": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "title"]
+    },
+    "UserDictionary": {
+      "title": "UserDictionary",
+      "description": "Custom dictionary words and exclusions synced for spellcheck.",
+      "type": "object",
+      "properties": {
+        "words": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "GoogleFontsSettings": {
+      "title": "GoogleFontsSettings",
+      "description": "Custom added Google Fonts synced across devices for the manuscript editor.",
+      "type": "object",
+      "properties": {
+        "fonts": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}/documents/{documentId}": {
+      "schema": "UserDocument",
+      "description": "Documents created and edited by the novelist."
+    },
+    "/users/{userId}/documents/{documentId}/snapshots/{snapshotId}": {
+      "schema": "DocumentSnapshot",
+      "description": "Named snapshots / version checkpoints of the document."
+    },
+    "/users/{userId}/characters/{characterId}": {
+      "schema": "Character",
+      "description": "Characters created and managed by the author in Characters mode."
+    },
+    "/users/{userId}/codex/{codexId}": {
+      "schema": "CodexEntry",
+      "description": "World lore and codex entries created by the novelist."
+    },
+    "/users/{userId}/settings/{settingId}": {
+      "schema": "UserSettings",
+      "description": "Preferences and editor settings for the user."
+    }
+  }
+}

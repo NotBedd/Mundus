@@ -1,2 +1,64 @@
-# Mundus
-A story-making suite with all features a writer needs to create and manage their worlds.
+MUNDUS INSTALLING & UPDATING GUIDE
+
+AUTOMATIC SETUP VIA SCRIPT
+
+EXTRACT THE ARCHIVE FILE DOWNLOADED FROM GITHUB AND OPEN THE EXTRACTED FOLDER BEFORE PROCEEDING, FOR ALL OSes
+
+WINDOWS:
+- Run prepare-app.bat and let it finish, it'll say "All done! You can press any key or close this window."
+
+Congratulations, you are done, now to actually use the app, you have two options:
+
+- In the folder you extracted you should now see two exe files, "Mundus-xxx-portable" and "Mundus-xxx-setup"
+- The portable runs the app inside this folder and keeps all data here, you can move it around as you like
+- The setup will install the app on the pc fully like others do, it'll store data in the default windows folders, create its own shortcut in the start menu etc
+
+LINUX:
+- Run prepare-app.sh and let it finish, it'll say "All done! You can press any key or close this window."
+
+Congratulations, you are done, now to actually use the app, you have two options:
+
+- In the folder you extracted you should now see two exe files, "Mundus-xxx.AppImage" and "mundus-app_xxx_amd64.deb"
+- The AppImage runs the app inside this folder and keeps all data here, you can move it around as you like
+- The deb will install the app on the pc fully like others do, it'll store data in the default system folders, create its own shortcut in the start menu etc. 
+
+MACOS:
+- Run prepare-app.sh and let it finish, it'll say "All done! You can press any key or close this window."
+
+Congratulations, you are done, now to actually use the app, you have two options:
+
+- In the folder you extracted you should now see two exe files, "Mundus-xxx-mac.zip" and "Mundus-xxx.dmg"
+- The zip when extracted gives you the app bundle, you can run it from any folder and it'll keep inside all data here
+- The dmg will give you the standard window where you drag the app icon into your Applications folder
+
+ANDROID (BUILD APK):
+- Open Android Studio
+- Click "Open" and select the "android" folder inside this extracted Mundus folder
+- Wait for Gradle indexing to complete
+- In the top menu, click Build -> Build Bundle(s) / APK(s) -> Build APK(s)
+- Click "locate" in the notification popup to find your generated app-debug.apk
+- Transfer the .apk to your Android phone and install!
+
+
+UPDATING MUNDUS
+
+WINDOWS
+- Download the new version's zip
+- Repeat the setup process from above until you get the two exes
+- Once you have the newer version portable.exe and setup.exe files, depending on which one you use currently
+/ If you have the portable, move the newer version over to the older one's folder, delete the older version, you're done
+/ If you have the fully installed version, run the newer setup.exe, select the option you chose when first installed (for user or for pc, it'll say at the bottom whether it detects a pre existing install or not), once the install is complete you are done
+
+LINUX
+- Download the new version's zip
+- Repeat the setup process from above until you get the newer version AppImage and deb
+- Once you have them, proceed depending on which one you use currently
+/ If you have the AppImage, move the new version one where you have your current one, delete the old one, make the new one executable (Right-click it → Properties → Permissions → check "Allow executing file as program), you're done
+/ If you have the fully installed version, double click the newer deb, click "upgrade" or "install" in the window that opens, you're done
+
+MACOS
+- Download the new version's zip
+- Repeat the setup process from above until you get the newer version .zip and .dmg files
+- Once you have them, proceed depending on which one you use currently
+/ If you have the .zip, double click the newer version one to get the newer Mundus.app, move it (Mundus.app) to where you keep your current one version one, delete the old one, you're done
+/ If you have the fully installed version, double click the newer .dmg, drag the Mundus icon into your Applications folder, click "replace", you're done

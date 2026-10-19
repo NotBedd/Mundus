@@ -1,0 +1,63 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.mundus.writer",
+  "productName": "Mundus",
+  "copyright": "Copyright © 2026",
+  "directories": {
+    "output": "release"
+  },
+  "npmRebuild": false,
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*",
+    "build/**/*",
+    "public/**/*",
+    "package.json"
+  ],
+  "win": {
+    "icon": "build/icon.ico",
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "nsis": {
+    "artifactName": "${productName}-v${version}-Setup.${ext}",
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true
+  },
+  "portable": {
+    "artifactName": "${productName}-v${version}-Portable.${ext}"
+  },
+  "mac": {
+    "icon": "build/icon.png",
+    "target": ["dmg", "zip"],
+    "category": "public.app-category.productivity"
+  },
+  "linux": {
+    "icon": "build/icons",
+    "target": ["AppImage", "deb", "rpm"],
+    "category": "Office",
+    "maintainer": "Mundus Developer <dev@mundus.local>",
+    "syncDesktopName": true
+  },
+  "deb": {
+    "fpm": [
+      "build/appstream/mundus-app.metainfo.xml=/usr/share/metainfo/mundus-app.metainfo.xml"
+    ]
+  },
+  "rpm": {
+    "fpm": [
+      "build/appstream/mundus-app.metainfo.xml=/usr/share/metainfo/mundus-app.metainfo.xml"
+    ]
+  }
+}

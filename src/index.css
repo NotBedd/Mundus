@@ -1,0 +1,568 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer utilities {
+  .font-serif-novel {
+    font-family: 'Lora', Georgia, Cambria, 'Times New Roman', Times, serif;
+  }
+  .font-display {
+    font-family: 'Cinzel', 'Playfair Display', Georgia, serif;
+  }
+  .font-sans-ui {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+  .font-mono-code {
+    font-family: 'JetBrains Mono', Courier, monospace;
+  }
+}
+
+/* Distraction-free scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(150, 150, 150, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(150, 150, 150, 0.45);
+}
+
+/* Rich document editor typography */
+.novel-editor {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.novel-editor:focus {
+  outline: none;
+}
+
+.novel-editor p,
+.novel-editor h1,
+.novel-editor h2,
+.novel-editor h3,
+.novel-editor blockquote,
+.novel-editor div {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.novel-editor p {
+  font-family: var(--default-p-font, "Lora", serif);
+  margin-bottom: 1.1em;
+  line-height: 1.8;
+}
+
+.novel-editor h1 {
+  font-size: 2.1rem;
+  font-weight: 700;
+  font-family: var(--default-h-font, "Cinzel", serif);
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.25;
+}
+
+.novel-editor h2 {
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-family: var(--default-h-font, "Cinzel", serif);
+  margin-top: 1.3em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+}
+
+.novel-editor h3 {
+  font-size: 1.3rem;
+  font-weight: 600;
+  font-family: var(--default-h-font, "Cinzel", serif);
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+  line-height: 1.35;
+}
+
+.novel-editor blockquote {
+  font-family: var(--default-quote-font, "Lora", serif);
+  border-left: 3px solid #71717a;
+  padding-left: 1.25rem;
+  margin: 1.2em 0;
+  font-style: italic;
+  opacity: 0.85;
+}
+
+::selection {
+  background-color: rgba(24, 24, 27, 0.18);
+}
+
+.dark ::selection {
+  background-color: rgba(244, 244, 245, 0.25);
+}
+
+.novel-editor ul {
+  list-style-type: disc;
+  padding-left: 1.75rem;
+  margin-bottom: 1em;
+}
+
+.novel-editor ol {
+  list-style-type: decimal;
+  padding-left: 1.75rem;
+  margin-bottom: 1em;
+}
+
+/* Word-style red wavy underline for misspelled words */
+.word-spell-error {
+  text-decoration: underline wavy #ef4444;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3.5px;
+}
+
+/* Theme text color auto-adaptation (prevents black text on dark background or white text on light background) */
+.dark .novel-editor [style*="color: rgb(0, 0, 0)"],
+.dark .novel-editor [style*="color: #000000"],
+.dark .novel-editor [style*="color: black"],
+.dark .novel-editor [style*="color: rgb(9, 9, 11)"],
+.dark .novel-editor [style*="color: #09090b"],
+.dark .novel-editor [style*="color: rgb(24, 24, 27)"],
+.dark .novel-editor [style*="color: rgb(23, 23, 23)"],
+.dark .novel-editor [style*="color: #171717"],
+.dark .novel-editor [style*="color: inherit"],
+.dark .novel-editor font[color="#000000"],
+.dark .novel-editor font[color="#09090b"],
+.dark .novel-editor font[color="#171717"],
+.dark .novel-editor font[color="black"],
+.dark .novel-editor font[color="inherit"],
+html.dark .novel-editor [style*="color: rgb(0, 0, 0)"],
+html.dark .novel-editor [style*="color: #000000"],
+html.dark .novel-editor [style*="color: black"],
+html.dark .novel-editor [style*="color: rgb(9, 9, 11)"],
+html.dark .novel-editor [style*="color: #09090b"],
+html.dark .novel-editor [style*="color: rgb(24, 24, 27)"],
+html.dark .novel-editor [style*="color: rgb(23, 23, 23)"],
+html.dark .novel-editor [style*="color: #171717"],
+html.dark .novel-editor [style*="color: inherit"],
+html.dark .novel-editor font[color="#000000"],
+html.dark .novel-editor font[color="#09090b"],
+html.dark .novel-editor font[color="#171717"],
+html.dark .novel-editor font[color="black"],
+html.dark .novel-editor font[color="inherit"] {
+  color: #f5f5f5 !important;
+}
+
+:not(.dark) .novel-editor [style*="color: rgb(255, 255, 255)"],
+:not(.dark) .novel-editor [style*="color: #ffffff"],
+:not(.dark) .novel-editor [style*="color: white"],
+:not(.dark) .novel-editor [style*="color: rgb(244, 244, 245)"],
+:not(.dark) .novel-editor [style*="color: rgb(245, 245, 245)"],
+:not(.dark) .novel-editor [style*="color: #f4f4f5"],
+:not(.dark) .novel-editor [style*="color: #f5f5f5"],
+:not(.dark) .novel-editor [style*="color: inherit"],
+:not(.dark) .novel-editor font[color="#ffffff"],
+:not(.dark) .novel-editor font[color="#f4f4f5"],
+:not(.dark) .novel-editor font[color="#f5f5f5"],
+:not(.dark) .novel-editor font[color="white"],
+:not(.dark) .novel-editor font[color="inherit"],
+html:not(.dark) .novel-editor [style*="color: rgb(255, 255, 255)"],
+html:not(.dark) .novel-editor [style*="color: #ffffff"],
+html:not(.dark) .novel-editor [style*="color: white"],
+html:not(.dark) .novel-editor [style*="color: rgb(244, 244, 245)"],
+html:not(.dark) .novel-editor [style*="color: rgb(245, 245, 245)"],
+html:not(.dark) .novel-editor [style*="color: #f4f4f5"],
+html:not(.dark) .novel-editor [style*="color: #f5f5f5"],
+html:not(.dark) .novel-editor [style*="color: inherit"],
+html:not(.dark) .novel-editor font[color="#ffffff"],
+html:not(.dark) .novel-editor font[color="#f4f4f5"],
+html:not(.dark) .novel-editor font[color="#f5f5f5"],
+html:not(.dark) .novel-editor font[color="white"],
+html:not(.dark) .novel-editor font[color="inherit"] {
+  color: #171717 !important;
+}
+
+/* v0.7.88 — Theme-adaptive writing highlights.
+   execCommand('hiliteColor') stamps the apply-time theme value inline, so a
+   highlight applied in dark mode stayed a dark block after switching to light
+   (and vice versa), making the text unreadable. Applied highlights are tagged
+   with data-mundus-hl="<key>"; the rules below force the correct wash for the
+   ACTIVE theme. The literal [style*="..."] selectors additionally cover legacy
+   stamps from older versions that carry no tag (Chromium serializes inline
+   colors as rgb(r, g, b) with spaces; the no-space and hex forms are kept for
+   robustness). */
+
+/* --- Light theme: force the light washes ---
+   NOTE: only the html:not(.dark) form is used — a bare :not(.dark) ancestor
+   combinator would also match in dark mode (any non-.dark ancestor like body
+   satisfies it) and incorrectly re-lighten dark stamps. */
+html:not(.dark) .novel-editor [data-mundus-hl="neutral"],
+html:not(.dark) .novel-editor [style*="rgb(63, 63, 70)"],
+html:not(.dark) .novel-editor [style*="rgb(63,63,70)"],
+html:not(.dark) .novel-editor [style*="#3f3f46" i] {
+  background-color: #e4e4e7 !important;
+}
+html:not(.dark) .novel-editor [data-mundus-hl="gold"],
+html:not(.dark) .novel-editor [style*="rgb(84, 59, 12)"],
+html:not(.dark) .novel-editor [style*="rgb(84,59,12)"],
+html:not(.dark) .novel-editor [style*="#543b0c" i] {
+  background-color: #fef08a !important;
+}
+html:not(.dark) .novel-editor [data-mundus-hl="mint"],
+html:not(.dark) .novel-editor [style*="rgb(20, 70, 42)"],
+html:not(.dark) .novel-editor [style*="rgb(20,70,42)"],
+html:not(.dark) .novel-editor [style*="#14462a" i] {
+  background-color: #bbf7d0 !important;
+}
+html:not(.dark) .novel-editor [data-mundus-hl="ice"],
+html:not(.dark) .novel-editor [style*="rgb(23, 58, 94)"],
+html:not(.dark) .novel-editor [style*="rgb(23,58,94)"],
+html:not(.dark) .novel-editor [style*="#173a5e" i] {
+  background-color: #bae6fd !important;
+}
+html:not(.dark) .novel-editor [data-mundus-hl="rose"],
+html:not(.dark) .novel-editor [style*="rgb(90, 25, 46)"],
+html:not(.dark) .novel-editor [style*="rgb(90,25,46)"],
+html:not(.dark) .novel-editor [style*="#5a192e" i] {
+  background-color: #fecdd3 !important;
+}
+
+/* --- Dark theme: force the dark washes --- */
+.dark .novel-editor [data-mundus-hl="neutral"],
+html.dark .novel-editor [data-mundus-hl="neutral"],
+.dark .novel-editor [style*="rgb(228, 228, 231)"],
+html.dark .novel-editor [style*="rgb(228, 228, 231)"],
+.dark .novel-editor [style*="rgb(228,228,231)"],
+html.dark .novel-editor [style*="rgb(228,228,231)"],
+.dark .novel-editor [style*="#e4e4e7" i],
+html.dark .novel-editor [style*="#e4e4e7" i] {
+  background-color: #3f3f46 !important;
+}
+.dark .novel-editor [data-mundus-hl="gold"],
+html.dark .novel-editor [data-mundus-hl="gold"],
+.dark .novel-editor [style*="rgb(254, 240, 138)"],
+html.dark .novel-editor [style*="rgb(254, 240, 138)"],
+.dark .novel-editor [style*="rgb(254,240,138)"],
+html.dark .novel-editor [style*="rgb(254,240,138)"],
+.dark .novel-editor [style*="#fef08a" i],
+html.dark .novel-editor [style*="#fef08a" i] {
+  background-color: #543b0c !important;
+}
+.dark .novel-editor [data-mundus-hl="mint"],
+html.dark .novel-editor [data-mundus-hl="mint"],
+.dark .novel-editor [style*="rgb(187, 247, 208)"],
+html.dark .novel-editor [style*="rgb(187, 247, 208)"],
+.dark .novel-editor [style*="rgb(187,247,208)"],
+html.dark .novel-editor [style*="rgb(187,247,208)"],
+.dark .novel-editor [style*="#bbf7d0" i],
+html.dark .novel-editor [style*="#bbf7d0" i] {
+  background-color: #14462a !important;
+}
+.dark .novel-editor [data-mundus-hl="ice"],
+html.dark .novel-editor [data-mundus-hl="ice"],
+.dark .novel-editor [style*="rgb(186, 230, 253)"],
+html.dark .novel-editor [style*="rgb(186, 230, 253)"],
+.dark .novel-editor [style*="rgb(186,230,253)"],
+html.dark .novel-editor [style*="rgb(186,230,253)"],
+.dark .novel-editor [style*="#bae6fd" i],
+html.dark .novel-editor [style*="#bae6fd" i] {
+  background-color: #173a5e !important;
+}
+.dark .novel-editor [data-mundus-hl="rose"],
+html.dark .novel-editor [data-mundus-hl="rose"],
+.dark .novel-editor [style*="rgb(254, 205, 211)"],
+html.dark .novel-editor [style*="rgb(254, 205, 211)"],
+.dark .novel-editor [style*="rgb(254,205,211)"],
+html.dark .novel-editor [style*="rgb(254,205,211)"],
+.dark .novel-editor [style*="#fecdd3" i],
+html.dark .novel-editor [style*="#fecdd3" i] {
+  background-color: #5a192e !important;
+}
+
+
+@supports (selector(::highlight(spell-errors))) {
+  ::highlight(spell-errors) {
+    text-decoration: underline wavy #ef4444;
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 3.5px;
+  }
+}
+
+@supports (selector(::highlight(search-results))) {
+  ::highlight(search-results) {
+    background-color: rgba(234, 179, 8, 0.45);
+    color: inherit;
+    border-radius: 2px;
+  }
+}
+
+@supports (selector(::highlight(search-current))) {
+  ::highlight(search-current) {
+    background-color: #f59e0b;
+    color: #000000;
+    font-weight: 600;
+    border-radius: 2px;
+  }
+}
+
+/* Document Page Break Component - Clean subtle gradient divider bridging physical pages */
+.mundus-page-break {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  pointer-events: none;
+}
+
+.mundus-page-break::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+  pointer-events: none;
+}
+
+:not(.dark) .mundus-page-break::before {
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.15), transparent);
+}
+
+.mundus-page-break + p,
+.mundus-page-break + h1,
+.mundus-page-break + h2,
+.mundus-page-break + h3,
+.mundus-page-break + blockquote,
+.mundus-page-break + div {
+  margin-top: 0;
+}
+
+/* Mundus Spacer (Ctrl+Enter) — a lightweight gap block that adds extra vertical
+   breathing room between the line above and the line below, WITHOUT forcing a
+   page break. Editor paragraphs use line-height 1.8, so 0.9em ≈ half a line:
+   the resulting separation reads as ~1.5x a normal line gap. It prints as pure
+   whitespace (no visible marker); a faint dashed guide appears on hover in the
+   editor so the element can be found and deleted. */
+.mundus-spacer {
+  position: relative;
+  height: 0.9em;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mundus-spacer::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 8%;
+  right: 8%;
+  height: 0;
+  border-top: 1px dashed transparent;
+  pointer-events: none;
+  transition: border-color 0.15s ease;
+}
+
+.mundus-spacer:hover::before {
+  border-top-color: rgba(113, 113, 122, 0.4);
+}
+
+.dark .mundus-spacer:hover::before,
+html.dark .mundus-spacer:hover::before {
+  border-top-color: rgba(161, 161, 170, 0.35);
+}
+
+/* Virtual Page Gap Styling (Zero DOM spacers - Option 1) */
+.is-page-start,
+.mundus-page-start {
+  position: relative;
+}
+
+@media print {
+  .is-page-start,
+  .mundus-page-start {
+    margin-top: 0 !important;
+    break-before: page;
+  }
+}
+
+@theme {
+  --color-accent: var(--mundus-accent);
+}
+
+/* Sidebar Mode Hover Animations */
+@keyframes quill-writing {
+  0% {
+    transform: rotate(0deg) translate(0, 0);
+  }
+  20% {
+    transform: rotate(-14deg) translate(-1px, -1px);
+  }
+  40% {
+    transform: rotate(4deg) translate(1px, 0.5px);
+  }
+  60% {
+    transform: rotate(-10deg) translate(-0.5px, -0.5px);
+  }
+  80% {
+    transform: rotate(2deg) translate(0.5px, 0.5px);
+  }
+  100% {
+    transform: rotate(0deg) translate(0, 0);
+  }
+}
+
+.quill-write-hover {
+  transform-origin: 20% 90%;
+  transition: transform 0.2s ease-out;
+}
+
+.group:hover .quill-write-hover {
+  animation: quill-writing 0.65s ease-in-out 1;
+}
+
+/* 3D-styled globe icon for Mundus View — meridian sweeps across sphere to simulate Y-axis rotation.
+   The sphere outline never collapses, so the icon always reads as a 3D ball instead of a flat disc. */
+@keyframes globe-meridian-rotate {
+  0%   { transform: scaleX(1);    opacity: 0.55; }
+  25%  { transform: scaleX(0.04); opacity: 0.12; }
+  50%  { transform: scaleX(-1);   opacity: 0.4;  }
+  75%  { transform: scaleX(0.04); opacity: 0.12; }
+  100% { transform: scaleX(1);    opacity: 0.55; }
+}
+
+.globe-3d-icon .globe-meridian {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: globe-meridian-rotate 1.6s ease-in-out 1;
+  animation-play-state: paused;
+  will-change: transform, opacity;
+}
+
+.group:hover .globe-3d-icon .globe-meridian {
+  animation-play-state: running;
+}
+
+/* Mundus Leaflet Map Dark/Light Theme Integration */
+.mundus-leaflet-map {
+  width: 100%;
+  height: 100%;
+  background: #0d0d0d;
+}
+
+html:not(.dark) .mundus-leaflet-map {
+  background: #f4f4f5;
+}
+
+.mundus-leaflet-map .leaflet-container {
+  background: transparent !important;
+  font-family: inherit;
+}
+
+.mundus-leaflet-div-icon {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Custom Pin Marker styling */
+.mundus-map-marker-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease-out, filter 0.15s ease-out;
+  cursor: pointer;
+}
+
+.mundus-map-marker-pin:hover {
+  transform: scale(1.18);
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5));
+  z-index: 999 !important;
+}
+
+/* Leaflet Popup Styling */
+.mundus-leaflet-popup .leaflet-popup-content-wrapper {
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0.75rem !important;
+}
+
+.mundus-leaflet-popup .leaflet-popup-content {
+  margin: 0 !important;
+  line-height: inherit !important;
+}
+
+.mundus-leaflet-popup .leaflet-popup-tip-container {
+  display: none !important;
+}
+
+.mundus-leaflet-popup a.leaflet-popup-close-button {
+  display: none !important;
+}
+
+/* App-wide clean styling for native form controls and number input spinners */
+html.dark,
+:root.dark,
+.dark {
+  color-scheme: dark;
+}
+
+html:not(.dark),
+:root:not(.dark) {
+  color-scheme: light;
+}
+
+/* Clean, transparent background for number field up/down arrows */
+.dark input[type="number"],
+html.dark input[type="number"],
+input[type="number"] {
+  color-scheme: dark;
+}
+
+html:not(.dark) input[type="number"] {
+  color-scheme: light;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  background: transparent !important;
+  opacity: 0.55;
+  cursor: pointer;
+  margin-right: 3px;
+  height: 100%;
+  transition: opacity 0.15s ease-in-out;
+}
+
+input[type="number"]:hover::-webkit-inner-spin-button,
+input[type="number"]:focus::-webkit-inner-spin-button {
+  opacity: 0.95;
+}
+
+
+
+/* v0.7.93: toast notifications (bottom-left, above the sidebar sync status) */
+@keyframes mundus-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.mundus-toast {
+  animation: mundus-toast-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
