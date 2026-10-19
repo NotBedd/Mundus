@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Mundus AppStream metainfo — installed to /usr/share/metainfo/ by the deb/rpm
+     builds (see electron-builder.json linux.fpm). Gives GNOME Software (Fedora) a
+     proper component: name "Mundus", the quill launcher icon from the desktop entry,
+     and the full application description. -->
+<component type="desktop-application">
+  <id>com.mundus.writer</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-Proprietary</project_license>
+  <name>Mundus</name>
+  <summary>A story-creating studio suite with Write, Characters, Lore and interactiveMap modes</summary>
+  <description>
+    <p>A story-creating studio suite that integrates a Write mode to tell your stories, a Characters Mode to store and bring your characters to life including a graphic family tree, a Lore mode where you can describe everything about the world, create timelines and map plotlines on a graph and an interactiveMap mode to visualize your creation.</p>
+    <p>All for as many projects as you like, each with its own data.</p>
+    <p>Supports export and import from and to various formats and cloud sync between devices after setup.</p>
+  </description>
+  <launchable type="desktop-id">mundus-app.desktop</launchable>
+  <url type="homepage">https://example.com</url>
+  <developer_name>Mundus Developer</developer_name>
+  <provides>
+    <binary>mundus-app</binary>
+  </provides>
+  <categories>
+    <category>Office</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.7.87" date="2026-10-17">
+      <description>
+        <p>Android launcher icon regenerated to fill the adaptive-icon safe zone; Linux desktop integration fixed: proper name, icon and full description in GNOME Software via AppStream metadata, and window/dock icon association on Fedora.</p>
+      </description>
+    </release>
+  </releases>
+</component>

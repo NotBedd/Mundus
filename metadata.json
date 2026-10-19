@@ -1,0 +1,8 @@
+{
+  "name": "Mundus",
+  "description": "A private, single-user writing and world-building suite for novelists featuring manuscript organization, rich text drafting, and lore world-building.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
