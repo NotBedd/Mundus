@@ -16,9 +16,9 @@
 
 <p> 
 
-Everything begins in the Atlas, where you can create, edit/delete and see all your projects (Each one is an independent Mundus)
-
-  You can use the upload button in the top right to upload an individual Mundus' backup file, which you can create within
+Everything begins in the Atlas, where you can:
+- Create, edit/delete and see all your projects (Each one is an independent Mundus)
+- Upload an individual Mundus' backup file, change app theme or access settings (top right) 
 
 </p>
 
@@ -26,28 +26,81 @@ Everything begins in the Atlas, where you can create, edit/delete and see all yo
 
 <br><br>
 
-Opening a Mundus brings you to Writing Mode, where the magic happens, here you can find all the familiar features of a document editor, including:
-- Quick button to see the scenes in the current folder or add a new one
+Opening a Mundus brings you to Writing Mode, where the magic happens, here you can find all the familiar features of a document editor and more, including:
+In the top bar
+- Folder button to see the scenes in the current folder or add a new one
 - Auto format the active document to fix pagination errors
 - Import / Export the active document to various formats
 - A Dropdown menu to assign Draft / Review or Complete status to the active docuement
 - A checkpoint system to easily save and restore a document without exiting the app, useful for trying out versions
-- Auto save options with time instant / timed intervals or off options
+- Auto save with instant / timed intervals or off options
 - Focus mode to hide the top toolbar
-- Zen mode to hide the entire UI, leaving you alone to focus on the text
+- Zen mode to hide the entire UI, leaving just you and the text
 - Support for uploaded custom Fonts and GoogleFonts, in the font selection menu (both sync when cloud is configured)
-- Text colour and highlighting
 - A dictionary to add custom words or names (The names of characters or Codex entries you create are automatically added!)
-- Adding images to the document, resize and align them, including captions and an option to sync them online via free hosting
+- Adding images to the document, resizing and aligning them, including captions and an option to sync them online via free hosting
 - Search and replace throughout the active document
 - Speech-to-text via Whistle, fully local, useful for brainstorming sessions
 - A spelling check, spelling review drawer with the list of errors in your document and an autocorrect engine based off Harper
-- 
+- A Timeline button to add a duration to the active document's scene, shows on the timeline in Lore Mode
+- An "In this Scene" drawer which automatically detects characters and Codex entries present in the document so you can easily reference them, keep track of who and what is involved or make a quick edit to them
+In the bottom bar
+- Page number
+- Document stats
+- Set a writing goal for the document / session (the bar fills with color with completion, toggleable in settings)
+- Active document format, last save time, zoom level controls
+
+<br><br>
 
 
+On the left side, the Sidebar lets you:
+- Navigate throughout the app
+- See and move between your documents (drag to select multiple)
+- Create new folders/documents or edit them
+-Access settings
+- Change the theme Monitor the cloud sync status and usage (hover over the cloud icon to see more details), change theme and access settings
+
+<img width="309" height="868" alt="Sidebar" src="https://github.com/user-attachments/assets/91629b21-2e02-4d3b-b437-98cd9fb1c92f" />
+
+<br><br>
+
+Mundus View
+
+<img width="2560" height="1369" alt="MundusView" src="https://github.com/user-attachments/assets/61be7768-7896-4aa3-bc49-1396216b787c" />
+
+<br><br>
+
+Characters Mode lets you bring your stories' characters to life, create a card for each one to always have the full picture available and to take advantage of Mundus's integration features, here's what it can do:
+View:
+- Search characters (looks inside all fields) 
+- View all your characters organized by collapsable factions or families
+- Filter by tags (results must have all selected tags) 
+Character cards (create a character and click them to edit their card):
+- Set name, titles, portrait picture, status and gender
+- Assign story roles, factions and family alignments
+- Describe relations, including parents, partners, siblings and children (partners and sibling automatically apply to all involved)
+- Assign custom attributes or tags
+- Specify date and place of birth and death
+- Describe appearance 
+- Describe everything you want about them, their ackstory, their motives, their personality etc
+- Author notes for upcoming plot twists or events
+- A section that shows in which documents the character is detected
+Family Tree Graph:
+- Automatically builds family trees from the assigned relationships
+- Can be filtered similar to the characters 
+<img width="2560" height="1369" alt="Characters" src="https://github.com/user-attachments/assets/808e4f5f-933e-4869-a4b0-471d6f3699d8" />
+<img width="2560" height="1369" alt="FamilyTree" src="https://github.com/user-attachments/assets/8f515ec9-b8e4-44c8-a9fa-2005750117f3" />
+
+<br><br>
+
+Lore Mode 
+
+<img width="2560" height="1369" alt="Lore" src="https://github.com/user-attachments/assets/bfd39b2e-a554-41e1-ae8a-05fe3d267cc8" />
 
 
+<br><br>
 
+Map Mode 
 
 
 
