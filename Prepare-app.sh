@@ -93,7 +93,10 @@ echo ""
 export NODE_NO_WARNINGS=1
 
 # should install missing dependencies
-npm install --include=dev
+if npm ls --dev --depth=0 2>/dev/null | grep -q "(empty)"; then
+    echo "Dipendenze dev non installate, procedo..."
+    npm install --include=dev
+fi
 
 # this if is incopleate, modify to check for more module as deepseek ask
 if [ ! -d "node_modules" ]; then
