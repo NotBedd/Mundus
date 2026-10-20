@@ -8,6 +8,12 @@
 
 <br>
 
+## Table of Contents
+
+- [Features Overview](#atlas)
+- [Install](#Install)
+- [Credits & Licenses](#Credits)
+
 ## Mundus is divided into 6 "Modes", 4 for the active creation process and 2 for managing it:
 (some of the pictures below are taken from the android version on a tablet to make them more readable in the smaller format) 
 
