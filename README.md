@@ -9,6 +9,7 @@
 <br>
 
 ## Mundus is divided into 6 "Modes", 4 for the active creation process and 2 for managing it:
+(some of the pictures below are taken from the android version on a tablet to make them more readable in the smaller format) 
 
 </div>
 
@@ -98,8 +99,9 @@ Character cards (create a character and click them to edit their card):
 Family Tree Graph:
 - Automatically builds family trees from the assigned relationships
 - Can be filtered similar to the characters 
-<img width="2560" height="1369" alt="Characters" src="https://github.com/user-attachments/assets/808e4f5f-933e-4869-a4b0-471d6f3699d8" />
-<img width="2560" height="1369" alt="FamilyTree" src="https://github.com/user-attachments/assets/8f515ec9-b8e4-44c8-a9fa-2005750117f3" />
+<img width="2944" height="1766" alt="CharactersFixed" src="https://github.com/user-attachments/assets/8ac37b79-34a2-40f8-868e-bb9c8e6bfbbe" />
+<img width="2944" height="1766" alt="FamilyTree" src="https://github.com/user-attachments/assets/e9ac429a-29ea-46a5-85fa-13b68a574001" />
+(If you look above, the "Missing" character has only the father assigned, so their line doesn't come from the union of the ones above) 
 
 <br><br>
 
@@ -113,15 +115,21 @@ Codex (The Encyclopedia)
 - Describe entries to never forget any detail
 
 Timeline 
-- Place describable events of various nature on the timeline
+- Place customizable events of various nature on the timeline
 - See when each document you wrote sits in the story (requires the scene to be assigned a start and duration)
 - See each character's lifespan
 - Filter or collapse sections to only see what you need
 
 Story Flow 
-- 
+- Link scenes to one another based on their relation (leads to, causes, flashback etc) with automatic positioning and color-coded link lines creation, to never lose track of your plotlines 
+- Filter scenes by chapter to only see what you need
+- Allows manual repositioning and editing 
 
-<img width="2560" height="1369" alt="Lore" src="https://github.com/user-attachments/assets/bfd39b2e-a554-41e1-ae8a-05fe3d267cc8" />
+<img width="2897" height="1740" alt="Screenshot_20261020-103246" src="https://github.com/user-attachments/assets/f384c93e-f909-499b-bb6f-04a44680ea0a" />
+<img width="2897" height="1742" alt="Screenshot_20261020-105122" src="https://github.com/user-attachments/assets/c349673c-ed01-4157-a5d8-c85b594eb07a" />
+
+// Timeline image here
+<img width="2897" height="1743" alt="Screenshot_20261020-104431" src="https://github.com/user-attachments/assets/be0309df-4f61-40cd-98da-fe68f42d3ffb" />
 
 
 <br><br>
@@ -133,6 +141,8 @@ Made to let you visualize your world:
 - Get the entry's info by clicking on the pin, or edit details on the fly
 - Filter the shown markers by category
 - Markers are placed with percentage coordinates, meaning you can upload a higher or lower resolution version of the same image without breaking your existing ones
+<img width="2898" height="1743" alt="Screenshot_20261020-104620" src="https://github.com/user-attachments/assets/ff9c9d19-d55e-4a51-9d96-66cd36422d14" />
+(The map image was taken from this Pinterest post, just for explanation purposes: https://id.pinterest.com/pin/223983781464022672/) 
 
 
 
