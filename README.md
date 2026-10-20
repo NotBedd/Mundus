@@ -16,7 +16,7 @@
 - [Features Overview](#atlas)
 - [Installing](#installing)
 - [Updating](#updating)
-- [Credits & Licenses](#credits)
+- [Credits, Licenses & Other Info](#credits)
 
 <br>
 
@@ -228,3 +228,6 @@ Congratulations, you are done, now to actually use the app,
   }
   
 - This project uses [Harper](https://github.com/Automattic/harper) for the autocorrect feature.
+
+### Other Informations
+- This project was developed with the help of AI tools, mainly Google AI Studio and z.ai's GLM Agent chat
