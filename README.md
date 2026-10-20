@@ -6,21 +6,19 @@
 
 <p>Brainstorming your ideas by talking, writing down a draft, detailing a profile for each character, place everything on a map, all you need in one single app, synced between devices, no more jumping between programs and websites.</p>
 
-<br>
+</div>
 
-## Table of Contents
+## Index
 
 - [Features Overview](#atlas)
-- [Install](#install)
+- [Installing](#installing)
 - [Updating](#updating)
-- [Credits & Licenses](#Credits)
+- [Credits & Licenses](#credits)
+
+<br>
 
 ## Mundus is divided into 6 "Modes", 4 for the active creation process and 2 for managing it:
 (some of the pictures below are taken from the android version on a tablet to make them more readable in the smaller format) 
-
-</div>
-
-<br>
 
 <p> 
 
@@ -34,7 +32,7 @@ Everything begins here, where you can:
 
 <img width="2560" height="1369" alt="MundusAtlas" src="https://github.com/user-attachments/assets/981dd335-7927-4dd8-af51-e332700c24b7" />
 
-<br><br>
+<br>
 
 ### Writing Mode
 Opening a Mundus brings you here, where the magic happens, you can find all the familiar features of a document editor and more, including:
@@ -63,8 +61,7 @@ In the bottom bar
 - Set a writing goal for the document / session (the bar fills with color with completion, toggleable in settings)
 - Active document format, last save time, zoom level controls
 
-<br><br>
-
+<br>
 
 ### Sidebar
 - Navigate throughout the app
@@ -72,10 +69,9 @@ In the bottom bar
 - Create new folders/documents or edit them
 -Access settings
 - Change the theme Monitor the cloud sync status and usage (hover over the cloud icon to see more details), change theme and access settings
-
 <img width="309" height="868" alt="Sidebar" src="https://github.com/user-attachments/assets/91629b21-2e02-4d3b-b437-98cd9fb1c92f" />
 
-<br><br>
+<br>
 
 ### Mundus View
 View lets you have a complete look over your project
@@ -85,7 +81,7 @@ View lets you have a complete look over your project
 
 <img width="2560" height="1369" alt="MundusView" src="https://github.com/user-attachments/assets/61be7768-7896-4aa3-bc49-1396216b787c" />
 
-<br><br>
+<br>
 
 ### Characters Mode 
 
@@ -110,7 +106,7 @@ Family Tree Graph:
 <img width="2944" height="1766" alt="FamilyTree" src="https://github.com/user-attachments/assets/e9ac429a-29ea-46a5-85fa-13b68a574001" />
 (If you look above, the "Missing" character has only the father assigned, so their line doesn't come from the union of the ones above) 
 
-<br><br>
+<br>
 
 ### Lore Mode 
 The very foundation of your Mundus, an archive-like tool to remember everything you created in it:
@@ -138,8 +134,7 @@ Story Flow
 // Timeline image here
 <img width="2897" height="1743" alt="Screenshot_20261020-104431" src="https://github.com/user-attachments/assets/be0309df-4f61-40cd-98da-fe68f42d3ffb" />
 
-
-<br><br>
+<br>
 
 ### Map Mode 
 Made to let you visualize your world:
@@ -151,20 +146,9 @@ Made to let you visualize your world:
 <img width="2898" height="1743" alt="Screenshot_20261020-104620" src="https://github.com/user-attachments/assets/ff9c9d19-d55e-4a51-9d96-66cd36422d14" />
 (The map image was taken from this Pinterest post, just for explanation purposes: https://id.pinterest.com/pin/223983781464022672/) 
 
+<br><br>
 
-
-
-
-
-
-
-
-
-
-
-<br><br><br><br><br><br><br><br><br><br><br><br><br>
-
-### Install
+### Installing
 
 Download the zip in a folder you like and extract it.
 
@@ -220,3 +204,5 @@ Congratulations, you are done, now to actually use the app,
 - Once you have them, proceed depending on which one you use currently
 1. If you have the .zip, double click the newer version one to get the newer Mundus.app, move it (Mundus.app) to where you keep your current one version one, delete the old one, you're done
 2. If you have the fully installed version, double click the newer .dmg, drag the Mundus icon into your Applications folder, click "replace", you're done
+
+### Credits 
