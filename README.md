@@ -206,3 +206,23 @@ Congratulations, you are done, now to actually use the app,
 - Once you have them, proceed depending on which one you use currently
 1. If you have the .zip, double click the newer version one to get the newer Mundus.app, move it (Mundus.app) to where you keep your current one version one, delete the old one, you're done
 2. If you have the fully installed version, double click the newer .dmg, drag the Mundus icon into your Applications folder, click "replace", you're done
+
+<br>
+
+### Credits
+
+## Acknowledgements
+
+- This project uses [Whistle](https://github.com/cactus-compute/needle) for the speech-to-text feature.
+  If you use Whistle in your work, please cite it as requested by its authors:
+  ```bibtex
+  @misc{whistle_2026,
+    title        = {Whistle: Speech Recognition for Tiny Devices},
+    author       = {Mroz, Jakub and Ndubuaku, Henry and Mosoyan, Karen and Cylich, Noah and
+                    Kumar, Satyajit and Sandhu, Parkirat and Shemet, Roman and Lee, Justin H.},
+    year         = {2026},
+    organization = {Cactus Compute, Inc.},
+    howpublished = {\url{https://github.com/cactus-compute/needle}}
+  }
+  
+- This project uses [Harper](https://github.com/Automattic/harper) for the autocorrect feature.
