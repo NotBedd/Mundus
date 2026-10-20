@@ -168,7 +168,7 @@ Made to let you visualize your world:
 
 Download the zip in a folder you like and extract it.
 
-WINDOWS:
+**WINDOWS**:
 - Run prepare-app.bat and let it finish, it'll say "All done! You can press any key or close this window
 
 you have two options:
@@ -178,7 +178,7 @@ you have two options:
 
 Congratulations, you are done, now to actually use the app.
 
-LINUX:
+**LINUX**:
 - Run prepare-app.sh and let it finish, it'll say "All done! You can press any key or close this window."
 
 you have two options:
@@ -188,7 +188,7 @@ you have two options:
 
 Congratulations, you are done, now to actually use the app, 
 
-MACOS:
+**MACOS**:
 - Run prepare-app.sh and let it finish, it'll say "All done! You can press any key or close this window."
 
 you have two options:
@@ -200,21 +200,21 @@ Congratulations, you are done, now to actually use the app,
 
 ### Updating
 
-WINDOWS
+**WINDOWS**
 - Download the new version's zip
 - Repeat the setup process from above until you get the two exes
 - Once you have the newer version portable.exe and setup.exe files, proceed depending on which one you use currently
 1. If you have the portable, move the newer version over to the older one's folder, delete the older version, you're done
 2. If you have the fully installed version, run the newer setup.exe, select the option you chose when first installed (for user or for pc, it'll say at the bottom whether it detects a pre existing install or not), once the install is complete you are done
 
-LINUX
+**LINUX**
 - Download the new version's zip
 - Repeat the setup process from above until you get the newer version AppImage and deb/rpm
 - Once you have them, proceed depending on which one you use currently
 1. If you have the AppImage, move the new version one where you have your current one, delete the old one, make the new one executable (Right-click it → Properties → Permissions → check "Allow executing file as program), you're done
 2. If you have the fully installed version, double click the newer deb, click "upgrade" or "install" in the window that opens, you're done
 
-MACOS
+**MACOS**
 - Download the new version's zip
 - Repeat the setup process from above until you get the newer version .zip and .dmg files
 - Once you have them, proceed depending on which one you use currently
