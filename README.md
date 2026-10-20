@@ -133,8 +133,7 @@ Story Flow
 
 <img width="2897" height="1740" alt="Screenshot_20261020-103246" src="https://github.com/user-attachments/assets/f384c93e-f909-499b-bb6f-04a44680ea0a" />
 <img width="2897" height="1742" alt="Screenshot_20261020-105122" src="https://github.com/user-attachments/assets/c349673c-ed01-4157-a5d8-c85b594eb07a" />
-
-// Timeline image here
+<img width="2924" height="1743" alt="Timeline" src="https://github.com/user-attachments/assets/2cb6f671-fd10-40a7-ab81-5135047c8665" />
 <img width="2897" height="1743" alt="Screenshot_20261020-104431" src="https://github.com/user-attachments/assets/be0309df-4f61-40cd-98da-fe68f42d3ffb" />
 
 <br>
