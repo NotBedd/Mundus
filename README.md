@@ -8,7 +8,7 @@
 
 <br>
 
-<p>Mundus is divided into 6 "Modes", 4 for the active creation process and 2 for managing it:</p>
+## Mundus is divided into 6 "Modes", 4 for the active creation process and 2 for managing it:
 
 </div>
 
@@ -16,9 +16,11 @@
 
 <p> 
 
-Everything begins in the Atlas, where you can:
-- Create, edit/delete and see all your projects (Each one is an independent Mundus)
-- Upload an individual Mundus' backup file, change app theme or access settings (top right) 
+### Atlas
+Everything begins here, where you can:
+- Create, edit the details, delete and see all your projects (Each one is an independent Mundus)
+- Upload an individual Mundus' backup file, change app theme or access settings (top right)
+- Access each Mundus (click to open) 
 
 </p>
 
@@ -26,7 +28,9 @@ Everything begins in the Atlas, where you can:
 
 <br><br>
 
-Opening a Mundus brings you to Writing Mode, where the magic happens, here you can find all the familiar features of a document editor and more, including:
+### Writing Mode
+Opening a Mundus brings you here, where the magic happens, you can find all the familiar features of a document editor and more, including:
+
 In the top bar
 - Folder button to see the scenes in the current folder or add a new one
 - Auto format the active document to fix pagination errors
@@ -44,6 +48,7 @@ In the top bar
 - A spelling check, spelling review drawer with the list of errors in your document and an autocorrect engine based off Harper
 - A Timeline button to add a duration to the active document's scene, shows on the timeline in Lore Mode
 - An "In this Scene" drawer which automatically detects characters and Codex entries present in the document so you can easily reference them, keep track of who and what is involved or make a quick edit to them
+
 In the bottom bar
 - Page number
 - Document stats
@@ -53,7 +58,7 @@ In the bottom bar
 <br><br>
 
 
-On the left side, the Sidebar lets you:
+### Sidebar
 - Navigate throughout the app
 - See and move between your documents (drag to select multiple)
 - Create new folders/documents or edit them
@@ -64,14 +69,19 @@ On the left side, the Sidebar lets you:
 
 <br><br>
 
-Mundus View
+### Mundus View
+View lets you have a complete look over your project
+- See and organize all your files and folders from collapsible and filtered lists
+- Assign status to documents (folders show "completed" automatically when all documents inside are marked completed) 
+- Know the stats for each document, folder and the entire project to keep track of your progress
 
 <img width="2560" height="1369" alt="MundusView" src="https://github.com/user-attachments/assets/61be7768-7896-4aa3-bc49-1396216b787c" />
 
 <br><br>
 
-Characters Mode lets you bring your stories' characters to life, create a card for each one to always have the full picture available and to take advantage of Mundus's integration features, here's what it can do:
-View:
+### Characters Mode 
+
+Lets you bring your stories' characters to life, create a card for each one to always have the full picture available and to take advantage of Mundus's integration features, here's what it can do:
 - Search characters (looks inside all fields) 
 - View all your characters organized by collapsable factions or families
 - Filter by tags (results must have all selected tags) 
@@ -93,15 +103,36 @@ Family Tree Graph:
 
 <br><br>
 
-Lore Mode 
+### Lore Mode 
+The very foundation of your Mundus, an archive-like tool to remember everything you created in it:
+
+Codex (The Encyclopedia) 
+- Create an entry for anything outside characters
+- Assign each entry to its category (customizable)
+- Upload images for each entry (support for multiple)
+- Describe entries to never forget any detail
+
+Timeline 
+- Place describable events of various nature on the timeline
+- See when each document you wrote sits in the story (requires the scene to be assigned a start and duration)
+- See each character's lifespan
+- Filter or collapse sections to only see what you need
+
+Story Flow 
+- 
 
 <img width="2560" height="1369" alt="Lore" src="https://github.com/user-attachments/assets/bfd39b2e-a554-41e1-ae8a-05fe3d267cc8" />
 
 
 <br><br>
 
-Map Mode 
-
+### Map Mode 
+Made to let you visualize your world:
+- Upload any image file as the Mundus' map
+- Pin markers on it to place locations or any other Codex entry
+- Get the entry's info by clicking on the pin, or edit details on the fly
+- Filter the shown markers by category
+- Markers are placed with percentage coordinates, meaning you can upload a higher or lower resolution version of the same image without breaking your existing ones
 
 
 
