@@ -11,7 +11,7 @@
 ## Table of Contents
 
 - [Features Overview](#atlas)
-- [Install](#Install)
+- [Install](#install)
 - [Credits & Licenses](#Credits)
 
 ## Mundus is divided into 6 "Modes", 4 for the active creation process and 2 for managing it:
@@ -163,8 +163,7 @@ Made to let you visualize your world:
 
 <br><br><br><br><br><br><br><br><br><br><br><br><br>
 
-
-
+### Install
 MUNDUS INSTALLING & UPDATING GUIDE
 
 AUTOMATIC SETUP VIA SCRIPT
