@@ -106,6 +106,35 @@ export function matchesBinding(e: KeyboardEvent, binding: ShortcutBinding): bool
   return e.key.toLowerCase() === binding.key.toLowerCase();
 }
 
+/** v0.7.96: exact-combo equality (key case-insensitive, modifiers as booleans). */
+export function bindingsEqual(a: ShortcutBinding, b: ShortcutBinding): boolean {
+  return (
+    (a.key || '').toLowerCase() === (b.key || '').toLowerCase() &&
+    !!a.ctrlOrCmd === !!b.ctrlOrCmd &&
+    !!a.shift === !!b.shift &&
+    !!a.alt === !!b.alt
+  );
+}
+
+/**
+ * v0.7.96: returns the ids of every OTHER action whose binding is identical to
+ * `binding`. Settings uses this to warn when a shortcut is assigned twice —
+ * a duplicate combination fires BOTH actions on the same keypress.
+ */
+export function findBindingConflicts(
+  bindings: CustomKeybindings,
+  excludeId: keyof CustomKeybindings | null,
+  binding: ShortcutBinding
+): (keyof CustomKeybindings)[] {
+  const conflicts: (keyof CustomKeybindings)[] = [];
+  (Object.keys(bindings) as (keyof CustomKeybindings)[]).forEach((id) => {
+    if (id === excludeId) return;
+    const other = bindings[id];
+    if (other && bindingsEqual(other, binding)) conflicts.push(id);
+  });
+  return conflicts;
+}
+
 /**
  * v0.7.93: zoom bindings tolerate keyboard reality — Ctrl+= and Ctrl+Shift+=
  * (which produces '+') both count as "zoom in", so users never have to think

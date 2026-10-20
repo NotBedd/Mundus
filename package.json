@@ -2,7 +2,7 @@
   "name": "mundus-app",
   "productName": "Mundus",
   "private": true,
-  "version": "0.7.94",
+  "version": "0.7.96",
   "description": "A story-creating studio suite that integrates a Write mode to tell your stories, a Characters Mode to store and bring your characters to life including a graphic family tree, a Lore mode where you can describe everything about the world, create timelines and map plotlines on a graph and an interactiveMap mode to visualize your creation. All for as many projects as you like, each with its own data. Supports export and import from and to various formats and cloud sync between devices after setup",
   "desktopName": "mundus-app.desktop",
   "homepage": "https://example.com",

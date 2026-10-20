@@ -92,7 +92,7 @@ import {
 } from './lib/syncManager';
 import { initializeCustomFonts, uploadCustomFontFile, removeCustomFont, syncAndRegisterCustomFonts } from './lib/fontManager';
 import { sanitizeCharacter, pickCharacterFields } from './lib/characterSanitize';
-import { syncRelativesAcrossCharacters } from './utils/characterRelativesSync';
+import { syncRelativesAcrossCharacters, purgeDeletedCharacterReferences } from './utils/characterRelativesSync';
 import { resolveFontCss } from './utils/defaultFonts';
 import { CURATED_GOOGLE_FONTS, loadGoogleFont, isValidGoogleFontItem } from './data/googleFonts';
 import { collectLocalFontPrefs, stampLocalFontPrefs, applyFontPrefsToLocalStorage, mergeFontPrefs } from './lib/fontPrefs';
@@ -103,14 +103,25 @@ import {
   getAutoBackupSnapshots, 
   exportMundusBackupToFile,
   parseMundusBackupFile,
+  AUTO_BACKUP_STORAGE_KEY,
   type BackupSnapshotMeta,
   type MundusBackupFile 
 } from './lib/backupEngine';
-import { getLocalMapImage, saveLocalMapImage } from './lib/mapStorage';
+import { getLocalMapImage, saveLocalMapImage, deleteLocalMapImage } from './lib/mapStorage';
+import {
+  readStoryFlowLayout,
+  writeStoryFlowLayout,
+  normalizeStoryFlowLayout,
+  remapStoryFlowLayout,
+  mergeStoryFlowLayouts,
+  clearStoryFlowLayout,
+  type StoryFlowLayout,
+} from './lib/storyFlowLayout';
 import { addWordToCustomDictionary } from './lib/spellCheckEngine';
 import { safeJsonStringify } from './lib/storage';
 import { getKeybindings, matchesBinding } from './lib/shortcutManager';
 import { ToastContainer, type ToastItem } from './components/Toast';
+import { ConfirmDialogHost, showConfirmDialog } from './components/ConfirmDialog';
 import { Sidebar } from './components/Sidebar';
 import { FirebaseConfigModal } from './components/FirebaseConfigModal';
 import { TextEditor } from './components/TextEditor';
@@ -344,8 +355,7 @@ export default function App() {
         localStorage.setItem('mundus_characters', safeJsonStringify(merged));
       } catch (quotaErr) {
         console.warn('LocalStorage full when persisting characters, freeing backup space:', quotaErr);
-        localStorage.removeItem('mundus_local_auto_backups');
-        localStorage.removeItem('mundus_auto_backups');
+        localStorage.removeItem(AUTO_BACKUP_STORAGE_KEY);
         localStorage.setItem('mundus_characters', safeJsonStringify(merged));
       }
     } catch (e) {
@@ -387,12 +397,16 @@ export default function App() {
     window.addEventListener('beforeunload', handlePageHide);
     // pagehide fires reliably on mobile (Android/iOS) when the WebView is frozen or killed
     window.addEventListener('pagehide', handlePageHide);
-    document.addEventListener('visibilitychange', () => {
+    // v0.7.95: named handler + cleanup — this listener used to be registered
+    // inline and never removed (the only unbalanced listener in the file).
+    const handleVisibilityFlush = () => {
       if (document.visibilityState === 'hidden') handlePageHide();
-    });
+    };
+    document.addEventListener('visibilitychange', handleVisibilityFlush);
     return () => {
       window.removeEventListener('beforeunload', handlePageHide);
       window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibilityFlush);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -591,7 +605,10 @@ export default function App() {
     } catch (e) {
       console.warn('LocalStorage full when persisting codex entries, freeing stale backups:', e);
       try {
-        localStorage.removeItem('mundus_auto_backups');
+        // v0.7.95 FIX: this fallback used to remove 'mundus_auto_backups', a key
+        // that never existed (the real key is 'mundus_local_auto_backups'), so
+        // the retry freed no space at all and the entries still failed to save.
+        localStorage.removeItem(AUTO_BACKUP_STORAGE_KEY);
         localStorage.setItem('mundus_codex_entries', JSON.stringify(codexEntries));
       } catch (retryErr) {
         console.error('Failed to persist codex entries locally after cache clearing:', retryErr);
@@ -852,6 +869,13 @@ export default function App() {
   // (mirrors the per-Mundus backup UX) instead of staying silent.
   const handleExportBackup = async (usePicker: boolean = true) => {
     try {
+      // v0.7.96: every world's Story Flow Graph layout rides along, so a
+      // restored app keeps its arranged graphs (was localStorage-only before).
+      const storyFlowLayouts: Record<string, StoryFlowLayout> = {};
+      mundusProjects.forEach((p) => {
+        const layout = readStoryFlowLayout(p.id);
+        if (layout) storyFlowLayouts[p.id] = layout;
+      });
       const result = await exportProjectBackupToFile({
         projects: mundusProjects, // v0.7.94: the Worlds list — restore needs it
         documents,
@@ -866,7 +890,8 @@ export default function App() {
         codexSections: legacyCodexSections || codexSections,
         codexSectionsByProject: codexSectionsMap,
         storyLinks,
-        codexEntries
+        codexEntries,
+        storyFlowLayouts
       }, backupFilePrefix, usePicker, backupDirPath);
 
       if (!result.delivered) {
@@ -1019,6 +1044,7 @@ export default function App() {
         mapMarkers,
         mapWorldName,
         mapImage,
+        storyFlowLayout: readStoryFlowLayout(projectId), // v0.7.96: graph layout travels with the world
       }, backupFilePrefix, backupDirPath);
 
       if (!result.delivered) {
@@ -1076,7 +1102,19 @@ export default function App() {
       // mundusId (per-project storage ignores the 'mundus-prima' fallback).
       const scopeItems = <T extends { mundusId?: string }>(items: T[] | undefined): T[] =>
         (items || []).map((it) => ({ ...it, mundusId: targetId }));
-      const documentsIn = scopeItems(data.documents);
+      const documentsIn = scopeItems(data.documents).map((d: any) => {
+        // v0.7.96: derive missing stat fields. Backups from hand-edited or
+        // third-party JSON can omit wordCount/characterCount; the editor's
+        // status bar rendered them unguarded and a missing field blanked the
+        // whole app (no error boundary). Normalize on the way in.
+        if (!d) return d;
+        const plain = typeof d.plainText === 'string' ? d.plainText : '';
+        return {
+          ...d,
+          wordCount: typeof d.wordCount === 'number' ? d.wordCount : (plain.trim() ? plain.trim().split(/\s+/).length : 0),
+          characterCount: typeof d.characterCount === 'number' ? d.characterCount : plain.length,
+        };
+      });
       const foldersIn = scopeItems(data.folders);
       const charactersIn = scopeItems(data.characters);
       const timelineIn = scopeItems(data.timelineEvents);
@@ -1177,6 +1215,15 @@ export default function App() {
       }
 
       // Map markers (localStorage per world) + realm name + full-res map image.
+      // v0.7.96: the Story Flow Graph layout travels too — ids are remapped
+      // through the same rename table as the items, then merged over whatever
+      // layout the target world already had (backup wins for shared scenes).
+      const backupLayout = normalizeStoryFlowLayout(data.storyFlowLayout);
+      if (backupLayout) {
+        const remappedLayout = remapStoryFlowLayout(backupLayout, renameMap);
+        const currentLayout = readStoryFlowLayout(targetId);
+        writeStoryFlowLayout(targetId, mergeStoryFlowLayouts(currentLayout, remappedLayout));
+      }
       if (markersIn.length > 0) {
         let existingMarkers: any[] = [];
         try {
@@ -1270,10 +1317,22 @@ export default function App() {
     }
   };
 
+  // v0.7.96: gather every world's Story Flow Graph canvas layout for backup
+  // payloads (snapshots + scheduled downloads), so restores keep arranged graphs.
+  const collectStoryFlowLayouts = (): Record<string, StoryFlowLayout> => {
+    const layouts: Record<string, StoryFlowLayout> = {};
+    mundusProjects.forEach((p) => {
+      const layout = readStoryFlowLayout(p.id);
+      if (layout) layouts[p.id] = layout;
+    });
+    return layouts;
+  };
+
   // Instant manual local snapshot generator
   const handleCreateInstantSnapshot = () => {
     try {
       saveAutoBackupSnapshot({
+        projects: mundusProjects, // v0.7.95: snapshots must carry the Worlds list
         documents,
         folders,
         characters,
@@ -1283,7 +1342,8 @@ export default function App() {
         codexSections: legacyCodexSections || codexSections,
         codexSectionsByProject: codexSectionsMap,
         storyLinks,
-        codexEntries
+        codexEntries,
+        storyFlowLayouts: collectStoryFlowLayouts() // v0.7.96
       });
       setBackupSnapshots(getAutoBackupSnapshots());
     } catch (err) {
@@ -1293,7 +1353,7 @@ export default function App() {
 
   // Clear local snapshots from browser storage
   const handleClearSnapshots = () => {
-    localStorage.removeItem('mundus_local_auto_backups');
+    localStorage.removeItem(AUTO_BACKUP_STORAGE_KEY);
     setBackupSnapshots([]);
   };
 
@@ -1305,6 +1365,7 @@ export default function App() {
     if (currentSnaps.length === 0) {
       try {
         saveAutoBackupSnapshot({
+          projects: mundusProjects, // v0.7.95: snapshots must carry the Worlds list
           documents,
           folders,
           characters,
@@ -1314,7 +1375,8 @@ export default function App() {
           codexSections: legacyCodexSections || codexSections,
           codexSectionsByProject: codexSectionsMap,
           storyLinks,
-          codexEntries
+          codexEntries,
+          storyFlowLayouts: collectStoryFlowLayouts() // v0.7.96
         });
         setBackupSnapshots(getAutoBackupSnapshots());
       } catch (err) {
@@ -1325,6 +1387,7 @@ export default function App() {
     const timer = setTimeout(() => {
       try {
         saveAutoBackupSnapshot({
+          projects: mundusProjects, // v0.7.95: snapshots must carry the Worlds list
           documents,
           folders,
           characters,
@@ -1334,7 +1397,8 @@ export default function App() {
           codexSections: legacyCodexSections || codexSections,
           codexSectionsByProject: codexSectionsMap,
           storyLinks,
-          codexEntries
+          codexEntries,
+          storyFlowLayouts: collectStoryFlowLayouts() // v0.7.96
         });
         setBackupSnapshots(getAutoBackupSnapshots());
       } catch (err) {
@@ -1371,7 +1435,8 @@ export default function App() {
         codexSections: legacyCodexSections || codexSections,
         codexSectionsByProject: codexSectionsMap,
         storyLinks,
-        codexEntries
+        codexEntries,
+        storyFlowLayouts: collectStoryFlowLayouts() // v0.7.96
       }, backupFilePrefix, false);
     }, ms);
 
@@ -1421,6 +1486,13 @@ export default function App() {
       if (restoredSectionsLegacy) setLegacyCodexSections(restoredSectionsLegacy);
       if (restored.storyLinks.length > 0) setStoryLinks(restored.storyLinks);
       if (restored.codexEntries.length > 0) setCodexEntries(restored.codexEntries);
+
+      // v0.7.96: restore each world's Story Flow Graph canvas layout into its
+      // localStorage keys so the graph repositions scenes exactly as arranged
+      // when the backup was made (layouts were invisible to backups before).
+      Object.entries(restored.storyFlowLayouts || {}).forEach(([mundusId, layout]) => {
+        writeStoryFlowLayout(mundusId, layout);
+      });
 
       // v0.7.94 FIX: keep the active world valid. If the current
       // activeMundusId points nowhere ('' on a fresh install, or a world that
@@ -1500,11 +1572,34 @@ export default function App() {
     }
   };
 
-  const handleRestoreBackupSnapshot = (snap: BackupSnapshotMeta) => {
-    if (!window.confirm(`Restore local project snapshot from ${new Date(snap.timestamp).toLocaleString()}? Current unsaved state will be overwritten.`)) {
+  // v0.7.96: the restore confirmation uses the modern in-app ConfirmDialog
+  // (promise-based) instead of the native window.confirm box.
+  const handleRestoreBackupSnapshot = async (snap: BackupSnapshotMeta) => {
+    const confirmed = await showConfirmDialog({
+      title: 'Restore this snapshot?',
+      message: 'Your current state will be overwritten with the snapshot\u2019s contents. Unsaved changes will be lost.',
+      detail: `Saved ${new Date(snap.timestamp).toLocaleString()}`,
+      confirmLabel: 'Restore Snapshot',
+      danger: true,
+    });
+    if (!confirmed) {
       return;
     }
     const data = snap.data;
+    // v0.7.95: restore the Worlds list too. Snapshots carried no projects
+    // before this version, so restoring one on a fresh install left every
+    // document invisible (the editor filters strictly by mundusId and none of
+    // the restored ids matched the empty world list). Same replace semantics
+    // and active-world validation as the app-wide backup restore above.
+    let snapProjects: MundusProject[] = [];
+    if (Array.isArray(data.projects) && data.projects.length > 0) {
+      snapProjects = data.projects
+        .filter((p: any) => p && typeof p.id === 'string' && p.id && typeof p.name === 'string')
+        .map((p: any) => ({ ...p })) as MundusProject[];
+      if (snapProjects.length > 0) {
+        setMundusProjects(snapProjects);
+      }
+    }
     if (data.documents?.length > 0) setDocuments(data.documents);
     if (data.folders?.length > 0) setFolders(data.folders);
     if (data.characters?.length > 0) {
@@ -1528,6 +1623,26 @@ export default function App() {
     if (snapSectionsLegacy) setLegacyCodexSections(snapSectionsLegacy);
     if (data.storyLinks?.length > 0) setStoryLinks(data.storyLinks);
     if (data.codexEntries?.length > 0) setCodexEntries(data.codexEntries);
+
+    // v0.7.96: restore every world's Story Flow Graph layout so scenes keep
+    // their arranged positions instead of piling into default spots.
+    Object.entries(data.storyFlowLayouts || {}).forEach(([mundusId, layout]) => {
+      writeStoryFlowLayout(mundusId, layout);
+    });
+
+    // v0.7.95: keep the active world valid after the restore. 'mundus-prima'
+    // is a built-in world and always valid; otherwise fall back to the most
+    // recently updated restored world so the content is on screen immediately.
+    const validActiveSnap =
+      activeMundusId === 'mundus-prima' ||
+      snapProjects.some((p) => p.id === activeMundusId) ||
+      (!snapProjects.length && mundusProjects.some((p) => p.id === activeMundusId));
+    if (!validActiveSnap && snapProjects.length > 0) {
+      const newestSnap = [...snapProjects].sort((a, b) =>
+        String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''))
+      );
+      setActiveMundusId(newestSnap[0].id);
+    }
   };
 
   // Persist auto-save preference
@@ -2336,9 +2451,48 @@ export default function App() {
     // Clean up elements associated with that Mundus
     // v0.7.75: tombstone the project's characters so storage merges / cloud
     // merges / the live listener cannot resurrect them on any device.
-    charactersRef.current
-      .filter((c) => c.mundusId === projectId)
-      .forEach((c) => markCharacterDeleted(c.id));
+    const doomedChars = charactersRef.current.filter((c) => c.mundusId === projectId);
+    doomedChars.forEach((c) => markCharacterDeleted(c.id));
+    // v0.7.95 FIX: cloud-side cleanup. The startup merge REPLACES local
+    // documents/folders from Firestore and MERGES codex entries & characters
+    // back in, so without these deletes a deleted world's content resurrected
+    // on the next launch (documents/folders immediately; entries on merge;
+    // characters once the local tombstone TTL pruned them).
+    if (isFirebaseConfigured) {
+      doomedChars.forEach((c) => {
+        deleteUserCharacter(DEFAULT_AUTHOR_ID, c.id).catch((err) => {
+          console.warn('[CharacterSync] Cloud delete failed (local deletion kept):', err);
+        });
+      });
+      documents
+        .filter((d) => d.mundusId === projectId)
+        .forEach((d) => {
+          deleteUserDocument(DEFAULT_AUTHOR_ID, d.id).catch(() => undefined);
+        });
+      folders
+        .filter((f) => f.mundusId === projectId)
+        .forEach((f) => {
+          deleteUserFolder(DEFAULT_AUTHOR_ID, f.id).catch(() => undefined);
+        });
+      codexEntries
+        .filter((en) => en.mundusId === projectId)
+        .forEach((en) => {
+          deleteUserCodexEntry(DEFAULT_AUTHOR_ID, en.id).catch(() => undefined);
+        });
+    }
+    // v0.7.95 FIX: timeline events & story links live in a single cloud lore
+    // doc — push the cleaned lists (the deleted world's events and links used
+    // to be restored from the cloud on the next launch).
+    scheduleLoreCloudSave();
+    // v0.7.95 FIX: remove the world's map data (markers + realm name in
+    // localStorage, full-resolution map image in IndexedDB). They used to be
+    // orphaned forever, silently consuming storage after the world was gone.
+    try { localStorage.removeItem(`mundus_map_markers_${projectId}`); } catch { /* ignore */ }
+    try { localStorage.removeItem(`mundus_map_world_name_${projectId}`); } catch { /* ignore */ }
+    void deleteLocalMapImage(projectId).catch(() => undefined);
+    // v0.7.96: also drop the world's Story Flow Graph layout keys.
+    clearStoryFlowLayout(projectId);
+
     setDocuments((prev) => prev.filter((d) => d.mundusId !== projectId));
     setFolders((prev) => prev.filter((f) => f.mundusId !== projectId));
     setCharacters((prev) => prev.filter((c) => c.mundusId !== projectId));
@@ -2780,6 +2934,10 @@ export default function App() {
 
     // Clean up any narrative story links attached to this deleted document
     setStoryLinks((prev) => prev.filter((l) => l.fromDocId !== docId && l.toDocId !== docId));
+    // v0.7.95 FIX: push the cleaned links to the cloud. The startup merge
+    // REPLACES the local story-link list from Firestore, so without this push
+    // the deleted document's links came back on the next launch.
+    scheduleLoreCloudSave();
 
     if (isFirebaseConfigured) {
       deleteUserDocument(DEFAULT_AUTHOR_ID, docId);
@@ -2995,9 +3153,22 @@ export default function App() {
   };
 
   const handleDeleteCharacter = (id: string) => {
-    const nextAfterDelete = charactersRef.current.filter((char) => char.id !== id);
+    // v0.7.95: purge every reference to the deleted character from the
+    // survivors (father/mother strings, siblings/partners/children arrays).
+    // The raw id used to survive inside the roster and was then displayed
+    // verbatim ("Partner: char-1729…") by the cards and the mention drawer.
+    const deleted = charactersRef.current.find((char) => char.id === id);
+    const survivors = charactersRef.current.filter((char) => char.id !== id);
+    const { list: nextAfterDelete, changedIds } = purgeDeletedCharacterReferences(
+      survivors,
+      id,
+      deleted?.name
+    );
     charactersRef.current = nextAfterDelete;
     setCharacters(nextAfterDelete);
+    // Persist the cleaned survivors (the debounced local write covers storage;
+    // cloud needs an explicit push per changed character, same as edits do).
+    changedIds.forEach((changedId) => queueCharacterCloudSave(changedId));
     // v0.7.75: tombstone the deletion so storage merges, the startup cloud
     // merge and the live listener never resurrect this character.
     markCharacterDeleted(id);
@@ -3314,6 +3485,24 @@ export default function App() {
     />
   );
 
+  // v0.7.96 FIX: the Firebase configuration modal used to be rendered ONLY in
+  // the writing-mode branch. Opening Settings from the Atlas (no Mundus open)
+  // and clicking "Configure Firebase" set the open state, but the modal was
+  // not part of the Atlas early-return tree — it silently waited and appeared
+  // only after the user opened a world. It is now a shared element rendered in
+  // BOTH branches, exactly like the settings modal itself.
+  const firebaseConfigModalElement = (
+    <FirebaseConfigModal
+      isOpen={isFirebaseConfigModalOpen}
+      onClose={() => {
+        setIsFirebaseConfigModalOpen(false);
+        setAuthErrorMessage(null);
+      }}
+      isDarkMode={isDarkMode}
+      errorMessage={authErrorMessage}
+    />
+  );
+
   // v0.7.92: confirmation popup shown when an imported Mundus backup has the
   // same name as an existing world — merge only after the user agrees.
   const mundusImportModalElement = pendingMundusImport ? (
@@ -3372,7 +3561,9 @@ export default function App() {
     return (
       <>
         {settingsModalElement}
+        {firebaseConfigModalElement}
         {mundusImportModalElement}
+        <ConfirmDialogHost isDarkMode={isDarkMode} />
         <MundusAtlas
           projects={mundusProjects}
           activeProjectId={activeMundusId}
@@ -3687,15 +3878,8 @@ export default function App() {
         )}
       </div>
 
-      <FirebaseConfigModal 
-        isOpen={isFirebaseConfigModalOpen}
-        onClose={() => {
-          setIsFirebaseConfigModalOpen(false);
-          setAuthErrorMessage(null);
-        }}
-        isDarkMode={isDarkMode}
-        errorMessage={authErrorMessage}
-      />
+      {firebaseConfigModalElement}
+      <ConfirmDialogHost isDarkMode={isDarkMode} />
     </div>
   );
 }

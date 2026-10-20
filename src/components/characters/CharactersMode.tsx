@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import type { Character, CharacterStatus, CodexEntry, TimelineConfig, NovelDocument, Folder } from '../../types';
 import { APP_VERSION } from '../../constants';
+import { looksLikeCharacterId } from '../../utils/characterRelativesSync';
 import { CharacterDetailView } from './CharacterDetailView';
 import { FamilyTreeGraph } from './FamilyTreeGraph';
 
@@ -360,13 +361,31 @@ export const CharactersMode: React.FC<CharactersModeProps> = ({
     return match ? match.name : idOrName;
   };
 
+  // v0.7.95: an id-shaped reference that resolves to nobody is a dangling
+  // pointer to a deleted character (it can never be a hand-typed custom name).
+  // Hide such refs on the cards instead of printing the raw id.
+  const isDanglingCharRef = (ref?: string): boolean =>
+    !!ref && looksLikeCharacterId(ref) && !characters.some((c) => c.id === ref);
+
+  const visibleRel = (char: Character) => {
+    const rel = char.relatives || {};
+    return {
+      father: rel.father && !isDanglingCharRef(rel.father) ? rel.father : '',
+      mother: rel.mother && !isDanglingCharRef(rel.mother) ? rel.mother : '',
+      partners: (rel.partners || []).filter((p) => !isDanglingCharRef(p)),
+      siblings: (rel.siblings || []).filter((s) => !isDanglingCharRef(s)),
+      children: (rel.children || []).filter((c) => !isDanglingCharRef(c)),
+    };
+  };
+
   const hasRelatives = (char: Character) => {
+    const v = visibleRel(char);
     return !!(
-      char.relatives?.father ||
-      char.relatives?.mother ||
-      (char.relatives?.partners && char.relatives.partners.length > 0) ||
-      (char.relatives?.siblings && char.relatives.siblings.length > 0) ||
-      (char.relatives?.children && char.relatives.children.length > 0)
+      v.father ||
+      v.mother ||
+      v.partners.length > 0 ||
+      v.siblings.length > 0 ||
+      v.children.length > 0
     );
   };
 
@@ -479,21 +498,28 @@ export const CharactersMode: React.FC<CharactersModeProps> = ({
                 <span>Relatives</span>
               </div>
               <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
-                {char.relatives?.father && (
-                  <div className="truncate"><span className="text-neutral-400">Father:</span> {resolveRelativeName(char.relatives.father)}</div>
-                )}
-                {char.relatives?.mother && (
-                  <div className="truncate"><span className="text-neutral-400">Mother:</span> {resolveRelativeName(char.relatives.mother)}</div>
-                )}
-                {char.relatives?.partners && char.relatives.partners.length > 0 && (
-                  <div className="truncate col-span-2"><span className="text-neutral-400">Partner:</span> {char.relatives.partners.map(resolveRelativeName).join(', ')}</div>
-                )}
-                {char.relatives?.siblings && char.relatives.siblings.length > 0 && (
-                  <div className="truncate col-span-2"><span className="text-neutral-400">Siblings:</span> {char.relatives.siblings.map(resolveRelativeName).join(', ')}</div>
-                )}
-                {char.relatives?.children && char.relatives.children.length > 0 && (
-                  <div className="truncate col-span-2"><span className="text-neutral-400">Children:</span> {char.relatives.children.map(resolveRelativeName).join(', ')}</div>
-                )}
+                {(() => {
+                  const v = visibleRel(char);
+                  return (
+                    <>
+                      {v.father && (
+                        <div className="truncate"><span className="text-neutral-400">Father:</span> {resolveRelativeName(v.father)}</div>
+                      )}
+                      {v.mother && (
+                        <div className="truncate"><span className="text-neutral-400">Mother:</span> {resolveRelativeName(v.mother)}</div>
+                      )}
+                      {v.partners.length > 0 && (
+                        <div className="truncate col-span-2"><span className="text-neutral-400">Partner:</span> {v.partners.map(resolveRelativeName).join(', ')}</div>
+                      )}
+                      {v.siblings.length > 0 && (
+                        <div className="truncate col-span-2"><span className="text-neutral-400">Siblings:</span> {v.siblings.map(resolveRelativeName).join(', ')}</div>
+                      )}
+                      {v.children.length > 0 && (
+                        <div className="truncate col-span-2"><span className="text-neutral-400">Children:</span> {v.children.map(resolveRelativeName).join(', ')}</div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           )}

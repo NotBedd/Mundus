@@ -775,6 +775,13 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   const [spellCheckEnabled, setSpellCheckState] = useState<boolean>(() => getSpellCheckEnabled());
   const [customWords, setCustomWords] = useState<string[]>(() => getCustomDictionary(activeMundusId));
   const [ignoredWords, setIgnoredWords] = useState<string[]>([]);
+  // v0.7.96: transient "added" confirmation on the + Dictionary button —
+  // replaces the old blocking native alert() box.
+  const [dictAddedWord, setDictAddedWord] = useState<string | null>(null);
+  const dictAddedTimerRef = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (dictAddedTimerRef.current !== null) window.clearTimeout(dictAddedTimerRef.current);
+  }, []);
 
   useEffect(() => {
     setCustomWords(getCustomDictionary(activeMundusId));
@@ -6827,7 +6834,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
                 Page {pageStats.current} of {pageStats.total}
               </span>
               <span className="font-mono text-[10px] text-neutral-500 dark:text-neutral-400 truncate">
-                {document.wordCount.toLocaleString()} words · {document.characterCount.toLocaleString()} chars
+                {(document.wordCount || 0).toLocaleString()} words · {(document.characterCount || 0).toLocaleString()} chars
               </span>
             </div>
 
@@ -6895,7 +6902,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
               <span className="text-neutral-300 dark:text-neutral-700">|</span>
 
               <span className="font-mono">
-                {document.wordCount.toLocaleString()} {document.wordCount === 1 ? 'word' : 'words'}
+                {(document.wordCount || 0).toLocaleString()} {(document.wordCount || 0) === 1 ? 'word' : 'words'}
               </span>
               {selectionStats !== null && (
                 <div className="flex items-center gap-1.5">
@@ -6929,7 +6936,13 @@ export const TextEditor: React.FC<TextEditorProps> = ({
                             onClick={() => {
                               if (selectedText) {
                                 handleAddCustomWord(selectedText);
-                                alert(`Added "${selectedText}" to custom dictionary!`);
+                                // v0.7.96: transient inline confirmation instead of alert()
+                                if (dictAddedTimerRef.current !== null) window.clearTimeout(dictAddedTimerRef.current);
+                                setDictAddedWord(selectedText);
+                                dictAddedTimerRef.current = window.setTimeout(() => {
+                                  setDictAddedWord(null);
+                                  dictAddedTimerRef.current = null;
+                                }, 2200);
                               }
                             }}
                             title={`Add "${selectedText}" to custom dictionary`}
@@ -6938,6 +6951,19 @@ export const TextEditor: React.FC<TextEditorProps> = ({
                             <BookOpen className="w-3 h-3 text-accent" />
                             <span>+ Dictionary</span>
                           </button>
+                        )}
+
+                        {/* v0.7.96: transient "added" chip — rendered independently of the
+                            button (the button unmounts once the word joins the dictionary,
+                            so the confirmation must outlive it to be visible). */}
+                        {dictAddedWord && (
+                          <span
+                            className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-600 dark:text-emerald-400 flex items-center gap-1 animate-in fade-in duration-200"
+                            role="status"
+                          >
+                            <Check className="w-3 h-3 text-emerald-500" />
+                            <span>Added "{dictAddedWord.length > 18 ? `${dictAddedWord.slice(0, 18)}…` : dictAddedWord}"</span>
+                          </span>
                         )}
 
                         {/* Character Dossier button */}
@@ -7014,7 +7040,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
                 </div>
               )}
               <span className="text-neutral-300 dark:text-neutral-700">|</span>
-              <span className="font-mono">{document.characterCount.toLocaleString()} chars</span>
+              <span className="font-mono">{(document.characterCount || 0).toLocaleString()} chars</span>
               <span className="text-neutral-300 dark:text-neutral-700 hidden sm:inline">|</span>
               <span className="hidden sm:inline">~{document.readingTimeMinutes} min read</span>
               <span className="text-neutral-300 dark:text-neutral-700">|</span>
@@ -7067,8 +7093,8 @@ export const TextEditor: React.FC<TextEditorProps> = ({
                         <>
                           <span>
                             {document.targetType === 'characters'
-                              ? `${document.characterCount.toLocaleString()} / ${targetCountVal.toLocaleString()} chars`
-                              : `${document.wordCount.toLocaleString()} / ${targetCountVal.toLocaleString()} words`}
+                              ? `${(document.characterCount || 0).toLocaleString()} / ${targetCountVal.toLocaleString()} chars`
+                              : `${(document.wordCount || 0).toLocaleString()} / ${targetCountVal.toLocaleString()} words`}
                           </span>
                           <span className="text-[10px] font-semibold opacity-70">
                             ({targetPercent}%)

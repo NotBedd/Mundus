@@ -1163,7 +1163,7 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
             )}
           </div>
           <div className="flex items-center gap-1.5 text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
-            <span className="font-mono">{doc.wordCount.toLocaleString()} words</span>
+            <span className="font-mono">{(doc.wordCount || 0).toLocaleString()} words</span>
             <span>•</span>
             <span>~{doc.readingTimeMinutes} min</span>
             <span className="hidden sm:inline">•</span>
