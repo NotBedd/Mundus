@@ -1,7 +1,7 @@
 <h1 align="center">MUNDUS</h1>
 
-<img width="512" height="512" alt="512x512" src="https://github.com/user-attachments/assets/1f09e268-d94e-4f8e-9f9d-4f30ec8856a9" />
-
+<div align = "center">
+<img width="192" height="192" alt="icon-192" src="https://github.com/user-attachments/assets/47abd096-c468-4fd5-b4b2-a1f19fb0f086" /></div>
 
 <div align="center">
 
