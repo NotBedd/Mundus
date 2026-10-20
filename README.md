@@ -82,7 +82,7 @@ View lets you have a complete look over your project
 - Assign status to documents (folders show "completed" automatically when all documents inside are marked completed) 
 - Know the stats for each document, folder and the entire project to keep track of your progress
 
-<img width="2560" height="1369" alt="MundusView" src="https://github.com/user-attachments/assets/61be7768-7896-4aa3-bc49-1396216b787c" />
+<img width="2898" height="1743" alt="View" src="https://github.com/user-attachments/assets/12090096-1dde-4789-8fed-9a380c71d1a9" />
 
 <br>
 
