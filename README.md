@@ -63,6 +63,8 @@ In the bottom bar
 - Document stats
 - Set a writing goal for the document / session (the bar fills with color with completion, toggleable in settings)
 - Active document format, last save time, zoom level controls
+<img width="2560" height="1368" alt="Screenshot From 2026-10-20 17-55-23" src="https://github.com/user-attachments/assets/87124eb2-db14-4db3-a433-82046c23eaff" />
+
 
 <br>
 
