@@ -234,3 +234,93 @@ export function syncRelativesAcrossCharacters(
 
   return Array.from(charMap.values());
 }
+
+// ---------------------------------------------------------------------------
+// v0.7.95: deletion hygiene. Character ids look like "char-<epoch>" (plus an
+// optional "-<rand>" suffix), so an id-shaped relative reference that resolves
+// to nobody is a dangling pointer to a deleted character — it can never be a
+// hand-typed custom name. UIs hide such refs, and the delete handler purges
+// them from the survivors so the raw id is never displayed again.
+// ---------------------------------------------------------------------------
+const INTERNAL_CHAR_ID_PATTERN = /^char-\d+(?:-\d+)*$/;
+
+export function looksLikeCharacterId(ref: string | undefined | null): boolean {
+  return typeof ref === 'string' && INTERNAL_CHAR_ID_PATTERN.test(ref);
+}
+
+export interface PurgeDeletedCharacterResult {
+  /** Survivor roster with every reference to the deleted character removed. */
+  list: Character[];
+  /** Ids of survivors whose relatives actually changed (for cloud saves). */
+  changedIds: string[];
+}
+
+/**
+ * v0.7.95: delete-time counterpart of syncRelativesAcrossCharacters. Deleting
+ * a character used to leave their raw id inside every survivor's relatives
+ * (father/mother strings + siblings/partners/children arrays) — the UI then
+ * displayed the id itself ("a number shown as partner").
+ *
+ * Rules (pure — inputs are never mutated):
+ *  1. Any reference equal to the deleted id is removed.
+ *  2. Any id-shaped reference that resolves to no survivor is removed too
+ *     (opportunistic cleanup of legacy dangling refs; an id-shaped ref cannot
+ *     be a custom name by definition).
+ *  3. A reference equal to the deleted character's NAME is removed only when
+ *     no surviving character owns that name (otherwise the name may point at
+ *     the same-named survivor). All other custom-name references survive.
+ */
+export function purgeDeletedCharacterReferences(
+  survivors: Character[],
+  deletedId: string,
+  deletedName?: string
+): PurgeDeletedCharacterResult {
+  const survivorIds = new Set(survivors.map((c) => c.id));
+  const nameLower = (deletedName || '').trim().toLowerCase();
+  const nameStillOwned = nameLower
+    ? survivors.some((c) => (c.name || '').trim().toLowerCase() === nameLower)
+    : false;
+
+  const isDeadRef = (ref: string): boolean => {
+    if (!ref) return false;
+    if (ref === deletedId) return true;
+    if (looksLikeCharacterId(ref) && !survivorIds.has(ref)) return true;
+    if (nameLower && !nameStillOwned && ref.trim().toLowerCase() === nameLower) return true;
+    return false;
+  };
+
+  const changedIds: string[] = [];
+  const list = survivors.map((char) => {
+    const rel = char.relatives;
+    if (!rel) return char;
+
+    const nextFather = rel.father && !isDeadRef(rel.father) ? rel.father : '';
+    const nextMother = rel.mother && !isDeadRef(rel.mother) ? rel.mother : '';
+    const nextSiblings = (rel.siblings || []).filter((s) => !isDeadRef(s));
+    const nextPartners = (rel.partners || []).filter((p) => !isDeadRef(p));
+    const nextChildren = (rel.children || []).filter((c) => !isDeadRef(c));
+
+    const changed =
+      nextFather !== (rel.father || '') ||
+      nextMother !== (rel.mother || '') ||
+      nextSiblings.length !== (rel.siblings || []).length ||
+      nextPartners.length !== (rel.partners || []).length ||
+      nextChildren.length !== (rel.children || []).length;
+    if (!changed) return char;
+
+    changedIds.push(char.id);
+    return {
+      ...char,
+      relatives: {
+        father: nextFather,
+        mother: nextMother,
+        siblings: nextSiblings,
+        partners: nextPartners,
+        children: nextChildren,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  return { list, changedIds };
+}

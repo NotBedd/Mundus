@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Database, Download, Copy, Check, RefreshCw, X, ShieldCheck, AlertTriangle, ExternalLink, ChevronDown, ChevronUp, HelpCircle, BookOpen, Activity, Code } from 'lucide-react';
 import { 
   type CustomFirebaseConfig, 
@@ -9,6 +9,7 @@ import {
   generateEnvFileContent,
   testCustomFirebaseConfig
 } from '../lib/firebase';
+import { showConfirmDialog } from './ConfirmDialog';
 
 const RECOMMENDED_FIRESTORE_RULES = `rules_version = '2';
 service cloud.firestore {
@@ -37,9 +38,11 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({
   isDarkMode,
   errorMessage
 }) => {
-  if (!isOpen) return null;
-
-  const initialConfig = getCustomStoredFirebaseConfig() || {
+  // v0.7.96 FIX: every hook now runs unconditionally. The old code returned
+  // null for closed modals BEFORE the useState calls, so the hook count
+  // changed between renders (a latent React crash) and the config state was
+  // re-seeded from storage on every render while open.
+  const [config, setConfig] = useState<CustomFirebaseConfig>(() => getCustomStoredFirebaseConfig() || {
     apiKey: '',
     authDomain: '',
     projectId: '',
@@ -47,9 +50,7 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({
     messagingSenderId: '',
     appId: '',
     firestoreDatabaseId: '(default)'
-  };
-
-  const [config, setConfig] = useState<CustomFirebaseConfig>(initialConfig);
+  });
   const [copied, setCopied] = useState(false);
   const [rulesCopied, setRulesCopied] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -57,10 +58,32 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({
   const [showRulesBox, setShowRulesBox] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
+
+  // Re-seed the form from whatever is stored each time the modal opens.
+  useEffect(() => {
+    if (isOpen) {
+      setConfig(getCustomStoredFirebaseConfig() || {
+        apiKey: '',
+        authDomain: '',
+        projectId: '',
+        storageBucket: '',
+        messagingSenderId: '',
+        appId: '',
+        firestoreDatabaseId: '(default)'
+      });
+      setValidationError(null);
+      setTestResult(null);
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
 
   const handleChange = (field: keyof CustomFirebaseConfig, value: string) => {
     setConfig(prev => ({ ...prev, [field]: value.trim() }));
     setTestResult(null);
+    setValidationError(null);
   };
 
   const handleCopyRules = () => {
@@ -93,9 +116,10 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({
     }
   };
 
+  // v0.7.96: inline validation banner instead of a blocking native alert().
   const handleSaveAndConnect = () => {
     if (!config.apiKey.trim() || !config.projectId.trim()) {
-      alert('API Key and Project ID are required to connect Firebase.');
+      setValidationError('API Key and Project ID are required to connect Firebase.');
       return;
     }
     saveCustomFirebaseConfig({
@@ -124,10 +148,23 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({
     downloadEnvFile(config);
   };
 
-  const handleReset = () => {
-    if (confirm('Are you sure you want to clear your custom Firebase settings?')) {
+  // v0.7.96: the reset confirmation uses the modern in-app ConfirmDialog
+  // instead of the native window.confirm box.
+  const handleReset = async () => {
+    if (isResetting) return;
+    const confirmed = await showConfirmDialog({
+      title: 'Clear your custom Firebase settings?',
+      message: 'Mundus will disconnect from your Firebase database and fall back to the built-in configuration until you connect again.',
+      confirmLabel: 'Clear Settings',
+      danger: true,
+    });
+    if (!confirmed) return;
+    setIsResetting(true);
+    try {
       clearCustomFirebaseConfig();
       window.location.reload();
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -164,6 +201,14 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({
           <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{errorMessage}</span>
+          </div>
+        )}
+
+        {/* v0.7.96: inline validation banner (replaces the old blocking alert) */}
+        {validationError && (
+          <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-xs flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="flex-1 font-medium">{validationError}</span>
           </div>
         )}
 

@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Settings, X, Sliders, Layout, Check, Palette, Type, HardDrive, Download, Upload, Clock, RefreshCw, AlertCircle, Keyboard, RotateCcw, Image as ImageIcon, ExternalLink, Eye, EyeOff, Key, Monitor, Folder, FolderOpen, Highlighter } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Settings, X, Sliders, Layout, Check, Palette, Type, HardDrive, Download, Upload, Clock, RefreshCw, AlertCircle, AlertTriangle, Keyboard, RotateCcw, Image as ImageIcon, ExternalLink, Eye, EyeOff, Key, Monitor, Folder, FolderOpen, Highlighter } from 'lucide-react';
 import type { BackupSnapshotMeta } from '../lib/backupEngine';
 import type { CustomKeybindings, ShortcutBinding } from '../types';
-import { DEFAULT_KEYBINDINGS, formatBinding, getKeybindings, saveKeybindings } from '../lib/shortcutManager';
+import { DEFAULT_KEYBINDINGS, findBindingConflicts, formatBinding, getKeybindings, saveKeybindings } from '../lib/shortcutManager';
 import { isValidImgBBApiKeyFormat } from '../lib/imgbb';
 import { isAndroidApp } from '../lib/platform';
 
@@ -57,6 +57,75 @@ const ACCENT_PRESETS = [
   { label: 'Cyan Teal', color: '#06b6d4' },
 ];
 
+/**
+ * v0.7.96: shortcut groups lifted to module scope so the duplicate-shortcut
+ * warning can map action ids to human labels (and rows can render conflict
+ * badges) without duplicating the list.
+ */
+const KEYBINDING_GROUPS: { title: string; items: { id: keyof CustomKeybindings; label: string }[] }[] = [
+  {
+    title: 'Formatting',
+    items: [
+      { id: 'undo', label: 'Undo Action' },
+      { id: 'redo', label: 'Redo Action' },
+      { id: 'bold', label: 'Toggle Bold Text' },
+      { id: 'italic', label: 'Toggle Italic Text' },
+      { id: 'strikethrough', label: 'Toggle Strikethrough' },
+    ]
+  },
+  {
+    title: 'Lists & Blocks',
+    items: [
+      { id: 'quote', label: 'Toggle Quote Block' },
+      { id: 'numberList', label: 'Make Selection a Number List' },
+      { id: 'bulletList', label: 'Make Selection a Bullet List' },
+    ]
+  },
+  {
+    title: 'Colors',
+    items: [
+      { id: 'highlighter', label: 'Open Highlighter Menu (cursor inside)' },
+    ]
+  },
+  {
+    title: 'Modes & Navigation',
+    items: [
+      { id: 'navWriting', label: 'Navigate to Writing Mode' },
+      { id: 'navCharacters', label: 'Navigate to Characters Mode' },
+      { id: 'navLore', label: 'Navigate to Lore Mode' },
+      { id: 'navWorldBuilding', label: 'Navigate to Map Mode' },
+      { id: 'navMundus', label: 'Navigate to Mundus View' },
+      { id: 'quickSearch', label: 'Global Quick Search' },
+    ]
+  },
+  {
+    title: 'Panels & Views',
+    items: [
+      { id: 'toggleSidebar', label: 'Open / Close Sidebar' },
+      { id: 'spellingReview', label: 'Open Spelling Review Drawer' },
+      { id: 'zoomIn', label: 'Zoom Page In' },
+      { id: 'zoomOut', label: 'Zoom Page Out' },
+      { id: 'zenMode', label: 'Toggle Zen Mode' },
+      { id: 'focusMode', label: 'Toggle Focus Mode' },
+    ]
+  },
+  {
+    title: 'Cursor & Bars',
+    items: [
+      { id: 'caretToEnd', label: 'Cursor to End of Document Text' },
+      { id: 'focusTopBar', label: 'Cursor to Top Bar (Toolbar)' },
+      { id: 'focusBottomBar', label: 'Cursor to Bottom Bar (Status Bar)' },
+      { id: 'focusSidebar', label: 'Cursor to Sidebar (pick documents with arrows)' },
+    ]
+  },
+];
+
+const KEYBINDING_LABELS: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  KEYBINDING_GROUPS.forEach((g) => g.items.forEach((it) => { map[it.id] = it.label; }));
+  return map;
+})();
+
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
@@ -98,9 +167,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onToggleDynamicTargetBarColor
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedSnapshotToConfirm, setSelectedSnapshotToConfirm] = useState<BackupSnapshotMeta | null>(null);
   const [keybindings, setKeybindings] = useState<CustomKeybindings>(() => getKeybindings());
   const [editingKey, setEditingKey] = useState<keyof CustomKeybindings | null>(null);
+  // v0.7.96: duplicate-shortcut warning shown right after a conflicting
+  // keypress is recorded; auto-dismisses after a few seconds.
+  const [shortcutWarning, setShortcutWarning] = useState<string | null>(null);
+  const shortcutWarningTimerRef = useRef<number | null>(null);
 
   // ImgBB API Key state
   const [localImgbbKey, setLocalImgbbKey] = useState<string>(imgbbApiKey || '');
@@ -163,6 +235,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       // Ignore lone modifier presses
       if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
 
+      // v0.7.96: Escape cancels recording instead of binding Esc as a shortcut.
+      if (e.key === 'Escape') {
+        setEditingKey(null);
+        return;
+      }
+
       const newBinding: ShortcutBinding = {
         key: e.key.toLowerCase(),
         ctrlOrCmd: e.ctrlKey || e.metaKey,
@@ -170,15 +248,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         alt: e.altKey,
       };
 
+      // v0.7.96: duplicate-shortcut warning — flag every OTHER action bound to
+      // the exact same combination (a duplicate fires both actions at once).
+      const conflicts = findBindingConflicts(keybindings, editingKey, newBinding);
+
       const updated = { ...keybindings, [editingKey]: newBinding };
       setKeybindings(updated);
       saveKeybindings(updated);
       setEditingKey(null);
+
+      if (shortcutWarningTimerRef.current !== null) {
+        window.clearTimeout(shortcutWarningTimerRef.current);
+        shortcutWarningTimerRef.current = null;
+      }
+      if (conflicts.length > 0) {
+        const conflictLabels = conflicts.map((id) => KEYBINDING_LABELS[id] || id);
+        setShortcutWarning(
+          `${formatBinding(newBinding)} is already used by "${conflictLabels.join('", "')}". Both actions will now fire together — record a different combination for one of them if that's not intended.`
+        );
+        shortcutWarningTimerRef.current = window.setTimeout(() => {
+          setShortcutWarning(null);
+          shortcutWarningTimerRef.current = null;
+        }, 8000);
+      } else {
+        setShortcutWarning(null);
+      }
     };
 
     window.addEventListener('keydown', handleRecordKey, true);
     return () => window.removeEventListener('keydown', handleRecordKey, true);
   }, [editingKey, keybindings]);
+
+  useEffect(() => () => {
+    if (shortcutWarningTimerRef.current !== null) window.clearTimeout(shortcutWarningTimerRef.current);
+  }, []);
+
+  // v0.7.96: ids of actions that permanently share their combination with
+  // another action (persistently highlighted until the user resolves them).
+  const duplicatedBindingIds = useMemo(() => {
+    const ids = Object.keys(keybindings) as (keyof CustomKeybindings)[];
+    const dupes = new Set<keyof CustomKeybindings>();
+    ids.forEach((id) => {
+      const binding = keybindings[id];
+      if (!binding) return;
+      if (findBindingConflicts(keybindings, id, binding).length > 0) dupes.add(id);
+    });
+    return dupes;
+  }, [keybindings]);
 
   // Close on ESC key press
   useEffect(() => {
@@ -974,66 +1090,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
 
+            {/* v0.7.96: duplicate-shortcut warning banner */}
+            {shortcutWarning && (
+              <div
+                id="shortcut-duplicate-warning"
+                role="alert"
+                className="p-3 rounded-xl border border-amber-500/40 bg-amber-500/10 flex items-start gap-2.5"
+              >
+                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">Duplicate shortcut</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-amber-600/90 dark:text-amber-400/90 break-words">
+                    {shortcutWarning}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (shortcutWarningTimerRef.current !== null) window.clearTimeout(shortcutWarningTimerRef.current);
+                    shortcutWarningTimerRef.current = null;
+                    setShortcutWarning(null);
+                  }}
+                  title="Dismiss warning"
+                  className="p-0.5 rounded text-amber-500/70 hover:text-amber-500 cursor-pointer shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             <div className={`p-4 rounded-xl border space-y-4 ${
               isDarkMode ? 'bg-neutral-900/60 border-neutral-800' : 'bg-neutral-50/80 border-neutral-200'
             }`}>
-              {([
-                {
-                  title: 'Formatting',
-                  items: [
-                    { id: 'undo', label: 'Undo Action' },
-                    { id: 'redo', label: 'Redo Action' },
-                    { id: 'bold', label: 'Toggle Bold Text' },
-                    { id: 'italic', label: 'Toggle Italic Text' },
-                    { id: 'strikethrough', label: 'Toggle Strikethrough' },
-                  ]
-                },
-                {
-                  title: 'Lists & Blocks',
-                  items: [
-                    { id: 'quote', label: 'Toggle Quote Block' },
-                    { id: 'numberList', label: 'Make Selection a Number List' },
-                    { id: 'bulletList', label: 'Make Selection a Bullet List' },
-                  ]
-                },
-                {
-                  title: 'Colors',
-                  items: [
-                    { id: 'highlighter', label: 'Open Highlighter Menu (cursor inside)' },
-                  ]
-                },
-                {
-                  title: 'Modes & Navigation',
-                  items: [
-                    { id: 'navWriting', label: 'Navigate to Writing Mode' },
-                    { id: 'navCharacters', label: 'Navigate to Characters Mode' },
-                    { id: 'navLore', label: 'Navigate to Lore Mode' },
-                    { id: 'navWorldBuilding', label: 'Navigate to Map Mode' },
-                    { id: 'navMundus', label: 'Navigate to Mundus View' },
-                    { id: 'quickSearch', label: 'Global Quick Search' },
-                  ]
-                },
-                {
-                  title: 'Panels & Views',
-                  items: [
-                    { id: 'toggleSidebar', label: 'Open / Close Sidebar' },
-                    { id: 'spellingReview', label: 'Open Spelling Review Drawer' },
-                    { id: 'zoomIn', label: 'Zoom Page In' },
-                    { id: 'zoomOut', label: 'Zoom Page Out' },
-                    { id: 'zenMode', label: 'Toggle Zen Mode' },
-                    { id: 'focusMode', label: 'Toggle Focus Mode' },
-                  ]
-                },
-                {
-                  title: 'Cursor & Bars',
-                  items: [
-                    { id: 'caretToEnd', label: 'Cursor to End of Document Text' },
-                    { id: 'focusTopBar', label: 'Cursor to Top Bar (Toolbar)' },
-                    { id: 'focusBottomBar', label: 'Cursor to Bottom Bar (Status Bar)' },
-                    { id: 'focusSidebar', label: 'Cursor to Sidebar (pick documents with arrows)' },
-                  ]
-                },
-              ] as { title: string; items: { id: string; label: string }[] }[]).map((group) => (
+              {KEYBINDING_GROUPS.map((group) => (
                 <div key={group.title} className="space-y-2">
                   <div className={`flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest font-mono ${
                     isDarkMode ? 'text-accent/80' : 'text-accent'
@@ -1046,23 +1135,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       const key = item.id as keyof CustomKeybindings;
                       const binding = keybindings[key];
                       const isEditingThis = editingKey === key;
+                      // v0.7.96: persistent duplicate badge on every action that
+                      // currently shares its exact combination with another action.
+                      const isDuplicated = duplicatedBindingIds.has(key);
 
                       return (
                         <div key={item.id} className="flex items-center justify-between gap-4 text-xs">
-                          <span className="font-medium text-neutral-900 dark:text-neutral-200">{item.label}</span>
+                          <span className="font-medium text-neutral-900 dark:text-neutral-200 flex items-center gap-1.5 min-w-0">
+                            <span className="truncate">{item.label}</span>
+                            {isDuplicated && !isEditingThis && (
+                              <AlertTriangle
+                                className="w-3 h-3 text-amber-500 shrink-0"
+                                aria-label="Shortcut assigned to multiple actions"
+                              />
+                            )}
+                          </span>
 
                           <button
                             type="button"
                             onClick={() => setEditingKey(isEditingThis ? null : key)}
-                            className={`px-3 py-1 rounded-lg border font-mono text-[11px] transition-all cursor-pointer ${
+                            className={`px-3 py-1 rounded-lg border font-mono text-[11px] transition-all cursor-pointer flex items-center gap-1.5 ${
                               isEditingThis
                                 ? 'bg-amber-500/20 border-amber-500 text-amber-300 animate-pulse'
+                                : isDuplicated
+                                ? 'bg-amber-500/10 border-amber-500/60 text-amber-600 dark:text-amber-400 hover:border-amber-500'
                                 : isDarkMode
                                 ? 'bg-neutral-800 border-neutral-700 text-neutral-200 hover:border-neutral-600'
                                 : 'bg-white border-neutral-300 text-neutral-800 hover:bg-neutral-100'
                             }`}
+                            title={isDuplicated ? 'This combination is assigned to multiple actions — both will fire together' : undefined}
                           >
                             {isEditingThis ? 'Press keys...' : formatBinding(binding)}
+                            {isDuplicated && !isEditingThis && <span className="text-[9px] font-bold uppercase tracking-wide">dup</span>}
                           </button>
                         </div>
                       );

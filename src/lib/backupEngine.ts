@@ -1,6 +1,7 @@
 import { APP_VERSION } from '../constants';
 import { appStorage, safeJsonStringify } from './storage';
 import { isAndroidApp } from './platform';
+import { normalizeStoryFlowLayout, type StoryFlowLayout } from './storyFlowLayout';
 
 export interface ProjectBackupData {
   version: string;
@@ -19,6 +20,11 @@ export interface ProjectBackupData {
   codexSectionsByProject?: any; // v0.7.76: per-project category map { [mundusId]: CodexSection[] }
   storyLinks: any[];
   codexEntries: any[];
+  /** v0.7.96: Story Flow Graph canvas layout per world { [mundusId]: layout }.
+   *  The layout used to live only in localStorage, so restoring a backup on a
+   *  fresh install/other device dropped every scene into default stacked
+   *  positions instead of the arrangement the author had made. */
+  storyFlowLayouts?: Record<string, StoryFlowLayout>;
 }
 
 export interface BackupSnapshotMeta {
@@ -31,7 +37,9 @@ export interface BackupSnapshotMeta {
   data: ProjectBackupData;
 }
 
-const AUTO_BACKUP_STORAGE_KEY = 'mundus_local_auto_backups';
+/** v0.7.95: exported — the quota-fallback cleanup and snapshot clearing must
+ *  reference the real key (a stale literal used to free nothing at all). */
+export const AUTO_BACKUP_STORAGE_KEY = 'mundus_local_auto_backups';
 
 /**
  * v0.7.92: shared writer for every backup JSON. Resolution order:
@@ -191,6 +199,7 @@ export const exportProjectBackupToFile = async (
     codexSectionsByProject?: any; // v0.7.76
     storyLinks: any[];
     codexEntries: any[];
+    storyFlowLayouts?: Record<string, StoryFlowLayout>; // v0.7.96
   },
   customPrefix: string = 'Mundus_Backup',
   usePicker: boolean = true,
@@ -210,7 +219,8 @@ export const exportProjectBackupToFile = async (
     codexSections: data.codexSections || [],
     codexSectionsByProject: data.codexSectionsByProject || {},
     storyLinks: data.storyLinks || [],
-    codexEntries: data.codexEntries || []
+    codexEntries: data.codexEntries || [],
+    storyFlowLayouts: data.storyFlowLayouts || {} // v0.7.96
   };
 
   const jsonString = JSON.stringify(fullBackup, null, 2);
@@ -266,6 +276,9 @@ export interface MundusBackupFile {
   mapMarkers: any[];
   mapWorldName?: string;
   mapImage?: MundusBackupMapImage | null;
+  /** v0.7.96: this world's Story Flow Graph canvas layout (placed scene ids
+   *  + their x/y), so a restored world keeps its arranged flow graph. */
+  storyFlowLayout?: StoryFlowLayout | null;
 }
 
 /** Assembles a scoped single-Mundus backup payload from app-state slices. */
@@ -282,6 +295,7 @@ export const buildMundusBackupFile = (input: {
   mapMarkers: any[];
   mapWorldName?: string;
   mapImage?: MundusBackupMapImage | null;
+  storyFlowLayout?: StoryFlowLayout | null; // v0.7.96
 }): MundusBackupFile => ({
   kind: 'mundus_backup',
   formatVersion: 1,
@@ -300,6 +314,7 @@ export const buildMundusBackupFile = (input: {
   mapMarkers: input.mapMarkers || [],
   mapWorldName: input.mapWorldName,
   mapImage: input.mapImage ?? null,
+  storyFlowLayout: input.storyFlowLayout ?? null, // v0.7.96
 });
 
 /**
@@ -374,6 +389,7 @@ export const parseMundusBackupFile = (file: File): Promise<MundusBackupFile> => 
                 dataUrl: parsed.mapImage.dataUrl,
               }
             : null,
+          storyFlowLayout: normalizeStoryFlowLayout(parsed.storyFlowLayout), // v0.7.96
         };
         resolve(restored);
       } catch (err: any) {
@@ -414,7 +430,15 @@ export const parseBackupFile = (file: File): Promise<ProjectBackupData> => {
           codexSections: parsed.codexSections || [],
           codexSectionsByProject: parsed.codexSectionsByProject || {},
           storyLinks: Array.isArray(parsed.storyLinks) ? parsed.storyLinks : [],
-          codexEntries: Array.isArray(parsed.codexEntries) ? parsed.codexEntries : []
+          codexEntries: Array.isArray(parsed.codexEntries) ? parsed.codexEntries : [],
+          // v0.7.96: Story Flow Graph layouts per world (absent in older backups)
+          storyFlowLayouts: (parsed.storyFlowLayouts && typeof parsed.storyFlowLayouts === 'object' && !Array.isArray(parsed.storyFlowLayouts))
+            ? Object.fromEntries(
+                Object.entries<any>(parsed.storyFlowLayouts)
+                  .map(([id, layout]) => [id, normalizeStoryFlowLayout(layout)])
+                  .filter(([, layout]) => layout !== null)
+              ) as Record<string, StoryFlowLayout>
+            : {}
         };
 
         resolve(restored);
@@ -469,6 +493,7 @@ function sanitizeSnapshotData<T>(obj: T, seen = new WeakSet<object>(), depth = 0
  * Saves automatic local backup snapshot to localStorage (retains max 5 recent snapshots)
  */
 export const saveAutoBackupSnapshot = (data: {
+  projects?: any[]; // v0.7.95: snapshots used to omit the Worlds list — restoring one on a fresh install left every document invisible
   documents: any[];
   folders: any[];
   characters: any[];
@@ -479,12 +504,14 @@ export const saveAutoBackupSnapshot = (data: {
   codexSectionsByProject?: any; // v0.7.76
   storyLinks: any[];
   codexEntries: any[];
+  storyFlowLayouts?: Record<string, StoryFlowLayout>; // v0.7.96
 }): BackupSnapshotMeta => {
   const isDesktop = appStorage.isElectron();
   const fullBackup: ProjectBackupData = {
     version: APP_VERSION,
     exportedAt: new Date().toISOString(),
     appName: 'Mundus Writing Studio',
+    projects: data.projects || [], // v0.7.95
     documents: isDesktop ? (data.documents || []) : sanitizeSnapshotData(data.documents || []),
     folders: data.folders || [],
     characters: isDesktop ? (data.characters || []) : sanitizeSnapshotData(data.characters || []),
@@ -494,7 +521,8 @@ export const saveAutoBackupSnapshot = (data: {
     codexSections: data.codexSections || [],
     codexSectionsByProject: data.codexSectionsByProject || {},
     storyLinks: data.storyLinks || [],
-    codexEntries: isDesktop ? (data.codexEntries || []) : sanitizeSnapshotData(data.codexEntries || [])
+    codexEntries: isDesktop ? (data.codexEntries || []) : sanitizeSnapshotData(data.codexEntries || []),
+    storyFlowLayouts: data.storyFlowLayouts || {} // v0.7.96
   };
 
   const snapshot: BackupSnapshotMeta = {

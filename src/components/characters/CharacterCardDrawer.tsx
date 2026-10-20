@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import type { Character, CharacterStatus, CharacterRelatives, CodexEntry } from '../../types';
 import { matchesMention } from '../../lib/mentionDetection';
+import { looksLikeCharacterId } from '../../utils/characterRelativesSync';
 
 interface CharacterCardDrawerProps {
   isOpen: boolean;
@@ -222,6 +223,21 @@ export const CharacterCardDrawer: React.FC<CharacterCardDrawerProps> = ({
   }, [internalSelectedId, mentionedCharacterIds, characters]);
 
   const activeChar = characters.find((c) => c.id === activeCharId);
+
+  // v0.7.95: the drawer used to print raw relative references verbatim, so a
+  // partner stored as an id showed up as "char-1729…" (a deleted character
+  // kept "showing as a number"). Resolve references to character names, and
+  // hide id-shaped references that resolve to nobody — those are dangling
+  // pointers to a deleted character and can never be hand-typed names.
+  const isDanglingCharRef = (ref?: string): boolean =>
+    !!ref && looksLikeCharacterId(ref) && !characters.some((c) => c.id === ref);
+  const resolveRelativeName = (idOrName?: string): string => {
+    if (!idOrName) return '';
+    const match = characters.find(
+      (c) => c.id === idOrName || c.name.toLowerCase() === idOrName.toLowerCase()
+    );
+    return match ? match.name : idOrName;
+  };
 
   // Filtered list of all characters according to search
   const filteredCharacters = useMemo(() => {
@@ -675,8 +691,18 @@ export const CharacterCardDrawer: React.FC<CharacterCardDrawerProps> = ({
                 </div>
               )}
 
-              {/* Kin & Relatives (if any exist) */}
-              {activeChar.relatives && (activeChar.relatives.father || activeChar.relatives.mother || (activeChar.relatives.partners && activeChar.relatives.partners.length > 0) || (activeChar.relatives.siblings && activeChar.relatives.siblings.length > 0) || (activeChar.relatives.children && activeChar.relatives.children.length > 0)) && (
+              {/* Kin & Relatives (if any exist). v0.7.95: references resolve to
+                  character names, dangling id-shaped refs are hidden, and the
+                  missing Siblings row is rendered again. */}
+              {(() => {
+                const rel = activeChar.relatives || {};
+                const kinFather = rel.father && !isDanglingCharRef(rel.father) ? rel.father : '';
+                const kinMother = rel.mother && !isDanglingCharRef(rel.mother) ? rel.mother : '';
+                const kinPartners = (rel.partners || []).filter((p) => !isDanglingCharRef(p));
+                const kinSiblings = (rel.siblings || []).filter((s) => !isDanglingCharRef(s));
+                const kinChildren = (rel.children || []).filter((c) => !isDanglingCharRef(c));
+                if (!kinFather && !kinMother && kinPartners.length === 0 && kinSiblings.length === 0 && kinChildren.length === 0) return null;
+                return (
                 <div className="space-y-1.5">
                   <h4 className="text-xs font-bold uppercase tracking-wider font-mono text-neutral-400 flex items-center gap-1.5">
                     <Heart className="w-3.5 h-3.5 text-pink-400" />
@@ -685,33 +711,40 @@ export const CharacterCardDrawer: React.FC<CharacterCardDrawerProps> = ({
                   <div className={`p-3.5 rounded-2xl border text-xs space-y-1.5 ${
                     isDarkMode ? 'bg-neutral-900/60 border-neutral-800 text-neutral-300' : 'bg-white border-neutral-200 text-neutral-800'
                   }`}>
-                    {activeChar.relatives.father && (
+                    {kinFather && (
                       <div className="flex items-center gap-2">
                         <span className="text-neutral-400 text-[10px] font-mono uppercase w-16 shrink-0">Father:</span>
-                        <span className="font-semibold text-neutral-200">{activeChar.relatives.father}</span>
+                        <span className="font-semibold text-neutral-200">{resolveRelativeName(kinFather)}</span>
                       </div>
                     )}
-                    {activeChar.relatives.mother && (
+                    {kinMother && (
                       <div className="flex items-center gap-2">
                         <span className="text-neutral-400 text-[10px] font-mono uppercase w-16 shrink-0">Mother:</span>
-                        <span className="font-semibold text-neutral-200">{activeChar.relatives.mother}</span>
+                        <span className="font-semibold text-neutral-200">{resolveRelativeName(kinMother)}</span>
                       </div>
                     )}
-                    {activeChar.relatives.partners && activeChar.relatives.partners.length > 0 && (
+                    {kinPartners.length > 0 && (
                       <div className="flex items-center gap-2">
                         <span className="text-neutral-400 text-[10px] font-mono uppercase w-16 shrink-0">Partner(s):</span>
-                        <span className="font-semibold text-neutral-200">{activeChar.relatives.partners.join(', ')}</span>
+                        <span className="font-semibold text-neutral-200">{kinPartners.map(resolveRelativeName).join(', ')}</span>
                       </div>
                     )}
-                    {activeChar.relatives.children && activeChar.relatives.children.length > 0 && (
+                    {kinSiblings.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-neutral-400 text-[10px] font-mono uppercase w-16 shrink-0">Siblings:</span>
+                        <span className="font-semibold text-neutral-200">{kinSiblings.map(resolveRelativeName).join(', ')}</span>
+                      </div>
+                    )}
+                    {kinChildren.length > 0 && (
                       <div className="flex items-center gap-2">
                         <span className="text-neutral-400 text-[10px] font-mono uppercase w-16 shrink-0">Children:</span>
-                        <span className="font-semibold text-neutral-200">{activeChar.relatives.children.join(', ')}</span>
+                        <span className="font-semibold text-neutral-200">{kinChildren.map(resolveRelativeName).join(', ')}</span>
                       </div>
                     )}
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               {/* Appearance & Distinguishing Traits */}
               {activeChar.appearance && (
