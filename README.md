@@ -9,6 +9,8 @@
 
 <p>Brainstorming your ideas by talking, writing down a draft, detailing a profile for each character, place everything on a map, all you need in one single app, synced between devices, no more jumping between programs and websites.</p>
 
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/notbed)
+
 </div>
 
 ## Index
