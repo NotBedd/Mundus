@@ -152,7 +152,7 @@ Made to let you visualize your world:
 
 <br><br>
 
-### Installing
+## Installing
 
 Download the zip in a folder you like and extract it.
 
@@ -186,7 +186,7 @@ you have two options:
 
 Congratulations, you are done, now to actually use the app, 
 
-### Updating
+## Updating
 
 **WINDOWS**
 - Download the new version's zip
@@ -211,9 +211,9 @@ Congratulations, you are done, now to actually use the app,
 
 <br>
 
-### Credits
+## Credits
 
-## Acknowledgements
+### Acknowledgements
 
 - This project uses [Whistle](https://github.com/cactus-compute/needle) for the speech-to-text feature.
   If you use Whistle in your work, please cite it as requested by its authors:
