@@ -45,6 +45,11 @@ import { isFirebaseConfigured } from '../lib/firebase';
 interface SidebarProps {
   documents: NovelDocument[];
   folders: Folder[];
+  // v0.7.98: every document/folder across ALL Mundus (used for the app-wide
+  // storage total in the sync tooltip). Falls back to the scoped props when
+  // omitted, so existing callers keep working.
+  allDocuments?: NovelDocument[];
+  allFolders?: Folder[];
   activeDocId: string;
   activeSection: ActiveSection;
   accentColor?: string;
@@ -73,6 +78,8 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   documents,
   folders,
+  allDocuments,
+  allFolders,
   activeDocId,
   activeSection,
   accentColor = '#8b5cf6',
@@ -213,30 +220,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
     window.addEventListener('dragstart', onDragStart);
   };
 
-  // Calculate approximate project storage usage
-  const { usedStorageDisplay, storagePercentDisplay } = useMemo(() => {
-    let bytes = 0;
-    documents.forEach((d) => {
-      bytes += (d.content?.length || 0) + (d.plainText?.length || 0) + (d.title?.length || 0) + 180;
-    });
-    folders.forEach((f) => {
-      bytes += (f.name?.length || 0) + 90;
-    });
-    // Base metadata overhead (settings, dictionary, timeline, characters)
-    bytes += 1024 * 16;
-    
-    let formatted = '';
-    if (bytes < 1024 * 1024) {
-      formatted = `${(bytes / 1024).toFixed(1)} KB`;
-    } else {
-      formatted = `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-    }
-    const percent = (bytes / (1024 * 1024 * 1024)) * 100;
-    return {
-      usedStorageDisplay: formatted,
-      storagePercentDisplay: percent < 0.01 ? '< 0.01%' : `${percent.toFixed(2)}%`
+  // Calculate approximate storage usage — v0.7.98: BOTH scopes, because users
+  // care about two different numbers against the Firebase quota: what the
+  // currently open Mundus uses, and what all Mundus combined use (every
+  // project lives in the same Firestore namespace / localStorage key, so the
+  // total is what actually pushes toward the 1 GB free tier).
+  const { usedStorageDisplay, totalStorageDisplay, storagePercentDisplay, storageBarPercent } = useMemo(() => {
+    const formatBytes = (bytes: number): string => {
+      if (bytes < 1024 * 1024) {
+        return `${(bytes / 1024).toFixed(1)} KB`;
+      }
+      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
     };
-  }, [documents, folders]);
+    const calcBytes = (docs: NovelDocument[], folds: Folder[]): number => {
+      let bytes = 0;
+      docs.forEach((d) => {
+        bytes += (d.content?.length || 0) + (d.plainText?.length || 0) + (d.title?.length || 0) + 180;
+      });
+      folds.forEach((f) => {
+        bytes += (f.name?.length || 0) + 90;
+      });
+      // Base metadata overhead (settings, dictionary, timeline, characters)
+      bytes += 1024 * 16;
+      return bytes;
+    };
+
+    const projectBytes = calcBytes(documents, folders);
+    const totalBytes = calcBytes(allDocuments ?? documents, allFolders ?? folders);
+    // Percent + bar track the app-wide total (quota-relevant number).
+    const percent = (totalBytes / (1024 * 1024 * 1024)) * 100;
+    return {
+      usedStorageDisplay: formatBytes(projectBytes),
+      totalStorageDisplay: formatBytes(totalBytes),
+      storagePercentDisplay: percent < 0.01 ? '< 0.01%' : `${percent.toFixed(2)}%`,
+      storageBarPercent: Math.min(100, Math.max(1.5, percent)),
+    };
+  }, [documents, folders, allDocuments, allFolders]);
 
   // If Firebase is not configured, disable syncing animations and force offline status
   const effectiveSyncStatus: 'synced' | 'saving' | 'offline' | 'error' = !isFirebaseConfigured ? 'offline' : syncStatus;
@@ -1322,11 +1341,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <span className="text-emerald-500 font-mono text-[11px]">{storagePercentDisplay}</span>
                       </div>
                       <div className="w-full h-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden mb-2">
-                        <div className="h-full bg-emerald-500 w-[1.5%]" />
+                        <div className="h-full bg-emerald-500" style={{ width: `${storageBarPercent}%` }} />
                       </div>
+                      {/* v0.7.98: show both scopes — current Mundus and app-wide total */}
                       <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400">
-                        <span>Used: {usedStorageDisplay}</span>
-                        <span>Total: 1.0 GB</span>
+                        <span>This Mundus: {usedStorageDisplay}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
+                        <span>All Mundus: {totalStorageDisplay}</span>
+                        <span>Quota: 1.0 GB</span>
                       </div>
                     </>
                   ) : (
@@ -1338,7 +1361,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         Firebase is not configured. All changes are saved locally to your device.
                       </p>
                       <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400">
-                        <span>Used: {usedStorageDisplay}</span>
+                        <span>This Mundus: {usedStorageDisplay}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
+                        <span>All Mundus: {totalStorageDisplay}</span>
                       </div>
                     </>
                   )}
@@ -1406,11 +1432,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <span className="text-emerald-500 font-mono text-[11px]">{storagePercentDisplay}</span>
                       </div>
                       <div className="w-full h-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden mb-2">
-                        <div className="h-full bg-emerald-500 w-[1.5%]" />
+                        <div className="h-full bg-emerald-500" style={{ width: `${storageBarPercent}%` }} />
                       </div>
+                      {/* v0.7.98: show both scopes — current Mundus and app-wide total */}
                       <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400">
-                        <span>Used: {usedStorageDisplay}</span>
-                        <span>Total: 1.0 GB</span>
+                        <span>This Mundus: {usedStorageDisplay}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
+                        <span>All Mundus: {totalStorageDisplay}</span>
+                        <span>Quota: 1.0 GB</span>
                       </div>
                     </>
                   ) : (
@@ -1422,7 +1452,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         Firebase is not configured. All changes are saved locally to your device.
                       </p>
                       <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400">
-                        <span>Used: {usedStorageDisplay}</span>
+                        <span>This Mundus: {usedStorageDisplay}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
+                        <span>All Mundus: {totalStorageDisplay}</span>
                       </div>
                     </>
                   )}

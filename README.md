@@ -9,6 +9,8 @@
 
 <p>Brainstorming your ideas by talking, writing down a draft, detailing a profile for each character, place everything on a map, all you need in one single app, synced between devices, no more jumping between programs and websites.</p>
 
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/notbed)
+
 </div>
 
 ## Index
@@ -16,11 +18,11 @@
 - [Features Overview](#atlas)
 - [Installing](#installing)
 - [Updating](#updating)
-- [Credits & Licenses](#credits)
+- [Credits, Licenses & Other Info](#credits)
 
 <br>
 
-## Mundus is divided into 6 "Modes", 4 for the active creation process and 2 for managing it:
+## Mundus is divided into 6 "Modes": 4 for the active creation process, 2 for managing it:
 (some of the pictures below are taken from the android version on a tablet to make them more readable in the smaller format) 
 
 <p> 
@@ -43,8 +45,8 @@ Opening a Mundus brings you here, where the magic happens, you can find all the 
 In the top bar
 - Folder button to see the scenes in the current folder or add a new one
 - Auto format the active document to fix pagination errors
-- Import / Export the active document to various formats
-- A Dropdown menu to assign Draft / Review or Complete status to the active docuement
+- Import / Export the active document from / to various formats
+- A Dropdown menu to assign Draft / Review or Complete status to the active document
 - A checkpoint system to easily save and restore a document without exiting the app, useful for trying out versions
 - Auto save with instant / timed intervals or off options
 - Focus mode to hide the top toolbar
@@ -70,10 +72,9 @@ In the bottom bar
 
 ### Sidebar
 - Navigate throughout the app
-- See and move between your documents (drag to select multiple)
+- See and move between your documents or organize them (drag to select multiple)
 - Create new folders/documents or edit them
--Access settings
-- Change the theme Monitor the cloud sync status and usage (hover over the cloud icon to see more details), change theme and access settings
+- Monitor the cloud sync status and usage (hover over the cloud icon to see more details), change theme and access settings
 <img width="309" height="868" alt="Sidebar" src="https://github.com/user-attachments/assets/91629b21-2e02-4d3b-b437-98cd9fb1c92f" />
 
 <br>
@@ -90,10 +91,11 @@ View lets you have a complete look over your project
 
 ### Characters Mode 
 
-Lets you bring your stories' characters to life, create a card for each one to always have the full picture available and to take advantage of Mundus's integration features, here's what it can do:
+Lets you bring your stories' characters to life, create a card for each one to always have the full picture available and to take advantage of Mundus' integration features, here's what it can do:
 - Search characters (looks inside all fields) 
-- View all your characters organized by collapsable factions or families
-- Filter by tags (results must have all selected tags) 
+- View all your characters organized by collapsible factions or families
+- Filter by tags (results must have all selected tags)
+
 Character cards (create a character and click them to edit their card):
 - Set name, titles, portrait picture, status and gender
 - Assign story roles, factions and family alignments
@@ -101,12 +103,13 @@ Character cards (create a character and click them to edit their card):
 - Assign custom attributes or tags
 - Specify date and place of birth and death
 - Describe appearance 
-- Describe everything you want about them, their ackstory, their motives, their personality etc
+- Describe everything you want about them, their backstory, their motives, their personality etc etc
 - Author notes for upcoming plot twists or events
 - A section that shows in which documents the character is detected
+
 Family Tree Graph:
 - Automatically builds family trees from the assigned relationships
-- Can be filtered similar to the characters 
+- Can be filtered similarly to the characters 
 <img width="2944" height="1766" alt="CharactersFixed" src="https://github.com/user-attachments/assets/8ac37b79-34a2-40f8-868e-bb9c8e6bfbbe" />
 <img width="2944" height="1766" alt="FamilyTree" src="https://github.com/user-attachments/assets/e9ac429a-29ea-46a5-85fa-13b68a574001" />
 (If you look above, the "Missing" character has only the father assigned, so their line doesn't come from the union of the ones above) 
@@ -141,10 +144,10 @@ Story Flow
 <br>
 
 ### Map Mode 
-Made to let you visualize your world:
+Made to let you visualise your world:
 - Upload any image file as the Mundus' map
 - Pin markers on it to place locations or any other Codex entry
-- Get the entry's info by clicking on the pin, or edit details on the fly
+- Get the entry's info by clicking on the pin, or edit its details on the fly
 - Filter the shown markers by category
 - Markers are placed with percentage coordinates, meaning you can upload a higher or lower resolution version of the same image without breaking your existing ones
 <img width="2898" height="1743" alt="Screenshot_20261020-104620" src="https://github.com/user-attachments/assets/ff9c9d19-d55e-4a51-9d96-66cd36422d14" />
@@ -152,7 +155,7 @@ Made to let you visualize your world:
 
 <br><br>
 
-### Installing
+## Installing
 
 Download the zip in a folder you like and extract it.
 
@@ -186,7 +189,7 @@ you have two options:
 
 Congratulations, you are done, now to actually use the app, 
 
-### Updating
+## Updating
 
 **WINDOWS**
 - Download the new version's zip
@@ -211,9 +214,9 @@ Congratulations, you are done, now to actually use the app,
 
 <br>
 
-### Credits
+## Credits
 
-## Acknowledgements
+### Acknowledgements
 
 - This project uses [Whistle](https://github.com/cactus-compute/needle) for the speech-to-text feature.
   If you use Whistle in your work, please cite it as requested by its authors:
@@ -228,3 +231,6 @@ Congratulations, you are done, now to actually use the app,
   }
   
 - This project uses [Harper](https://github.com/Automattic/harper) for the autocorrect feature.
+
+### Other Informations
+- This project was developed with the help of AI tools, mainly Google AI Studio and z.ai's GLM Agent chat

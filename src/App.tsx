@@ -3626,6 +3626,8 @@ export default function App() {
         <Sidebar
           documents={currentMundusDocs}
           folders={currentMundusFolders}
+          allDocuments={documents}
+          allFolders={folders}
           activeDocId={activeDocId}
           activeSection={activeSection}
           activeMundusProject={activeMundusProject}

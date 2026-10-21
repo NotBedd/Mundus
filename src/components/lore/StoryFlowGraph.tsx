@@ -2029,7 +2029,6 @@ export const StoryFlowGraph: React.FC<StoryFlowGraphProps> = ({
                 const pos = nodePositions[doc.id] || { x: ORIGIN_X, y: ORIGIN_Y };
                 const folder = folders.find((f) => f.id === doc.folderId);
                 const isHovered = hoveredNodeId === doc.id;
-                const isDraft = doc.status === 'draft';
                 const hasLinks = storyLinks.some((l) => l.fromDocId === doc.id || l.toDocId === doc.id);
 
                 const timelineDisplay = doc.timelineInfo?.startDisplay || 
@@ -2062,8 +2061,12 @@ export const StoryFlowGraph: React.FC<StoryFlowGraphProps> = ({
                         </span>
                         
                         <div className="flex items-center gap-1.5">
+                          {/* v0.7.98: mirror the editor's status dot scheme —
+                              complete = green, revision (in review) = yellow,
+                              draft = grey. The old two-way mapping showed amber
+                              for drafts and green for in-review scenes. */}
                           <span className={`w-2 h-2 rounded-full ${
-                            isDraft ? 'bg-amber-400' : 'bg-emerald-400'
+                            doc.status === 'complete' ? 'bg-emerald-500' : doc.status === 'revision' ? 'bg-amber-500' : 'bg-neutral-400'
                           }`} title={doc.status} />
 
                           <button
