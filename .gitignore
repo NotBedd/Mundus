@@ -1,0 +1,24 @@
+# Dependencies — rebuilt by npm ci (locally) or GitHub Actions (releases)
+node_modules/
+
+# Build outputs — recreated by `npm run build` / electron-builder
+dist/
+dist-electron/
+release/
+coverage/
+
+# NOTE: build/ (icons + appstream metadata) is REQUIRED by electron-builder
+# both locally and in CI — keep it tracked, do not add it here.
+
+# Local temp / logs
+tmp/
+*.log
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Secrets / local config — never commit
+.env*
+!.env.example
+firebase-applet-config.json
