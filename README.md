@@ -189,6 +189,9 @@ you have two options:
 
 Congratulations, you are done, now to actually use the app, 
 
+### Android
+- Download and install the apk file (it might ask for permission as its not signed)
+
 ## Updating
 
 **WINDOWS**
@@ -211,6 +214,9 @@ Congratulations, you are done, now to actually use the app,
 - Once you have them, proceed depending on which one you use currently
 1. If you have the .zip, double click the newer version one to get the newer Mundus.app, move it (Mundus.app) to where you keep your current one version one, delete the old one, you're done
 2. If you have the fully installed version, double click the newer .dmg, drag the Mundus icon into your Applications folder, click "replace", you're done
+
+### Android
+- Download and install the newer apk, it will ask to update, say yes (might also ask for permission again as its not signed)
 
 <br>
 
