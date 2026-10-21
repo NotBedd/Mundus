@@ -1,0 +1,101 @@
+# Mundus release build pipeline (v0.7.97)
+#
+# How it works:
+#   1. Push a tag named like the app version (e.g. v0.7.97) — or run manually
+#      from the Actions tab (workflow_dispatch).
+#   2. Three fresh virtual machines (Windows / Linux / macOS) each install the
+#      dependencies, build the app, and package native installers with
+#      electron-builder (targets configured in electron-builder.json).
+#   3. On a tag build, all installers are attached to a GitHub Release at
+#      github.com/<owner>/<repo>/releases — the permanent download page.
+#
+# Notes:
+#   - Public repos: unlimited free build minutes. Private repos: 2,000 min/month
+#     (one full run of this pipeline uses roughly 30-45 aggregate minutes).
+#   - Artifacts are UNSIGNED: Windows shows a one-time SmartScreen prompt
+#     ("More info -> Run anyway"); macOS needs right-click -> Open on first launch.
+
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Show version
+        shell: bash
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          echo "package.json version: $PKG_VERSION (tag: ${GITHUB_REF_NAME})"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app (web + electron main)
+        run: npm run build
+
+      - name: Package native installers
+        env:
+          # Skip code-signing identity lookup (no certs in CI by design)
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --publish never
+
+      - name: Upload installers as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            release/*.blockmap
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Attach installers to GitHub Release
+    needs: build
+    # Only publish a Release for tag pushes (manual runs just build artifacts)
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all built installers
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Mundus ${{ github.ref_name }}
+          files: release-assets/*
+          generate_release_notes: true
+          make_latest: true
