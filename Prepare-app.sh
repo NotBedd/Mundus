@@ -92,6 +92,10 @@ echo ""
 # 3. Install dependencies if not already installed
 export NODE_NO_WARNINGS=1
 
+# should install missing dependencies
+npm install --include=dev
+
+# this if is incopleate, modify to check for more module as deepseek ask
 if [ ! -d "node_modules" ]; then
     echo "Installing project dependencies..."
     npm install --no-fund --no-audit --loglevel=error
