@@ -144,6 +144,29 @@ const STORAGE_KEY_ADDED_GOOGLE_FONTS = 'mundus_added_google_fonts';
 const CHAR_HIGHLIGHT_STYLE_ID = 'mundus-character-name-highlights';
 const CHAR_HIGHLIGHT_PREFIX = 'mundus-char-';
 
+// v0.7.98: module-level teardown for the character-name highlights (registry
+// entries + shared <style> tag). Used ONLY for real teardown moments — the
+// feature being toggled off, a document switch, and component unmount — and
+// deliberately NOT for dependency-change cleanups, which must keep the current
+// highlights painted while the debounced re-scan prepares the atomic swap
+// (see the flicker fix comment on the highlight effect below).
+const removeAllCharHighlightAssets = () => {
+  if (typeof CSS !== 'undefined' && 'highlights' in CSS) {
+    try {
+      const highlights = (CSS as any).highlights;
+      const namesToRemove: string[] = [];
+      highlights.forEach((_: unknown, name: string) => {
+        if (name.startsWith(CHAR_HIGHLIGHT_PREFIX)) namesToRemove.push(name);
+      });
+      namesToRemove.forEach((name) => {
+        try { highlights.delete(name); } catch (e) {}
+      });
+    } catch (e) {}
+  }
+  const existingStyle = window.document.getElementById(CHAR_HIGHLIGHT_STYLE_ID);
+  if (existingStyle) existingStyle.remove();
+};
+
 const getInitialGoogleFonts = (): GoogleFontItem[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_ADDED_GOOGLE_FONTS);
@@ -1201,27 +1224,17 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   //  * Overlap resolution: longer matches win over shorter ones, both
   //    within a single character and across multiple characters.
   // ============================================================
+  // v0.7.98: tracks which document the currently-registered character highlights
+  // were anchored against, so a document switch can drop them immediately.
+  const charHighlightPrevDocIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     const supportsHighlightApi = typeof CSS !== 'undefined' && 'highlights' in CSS;
 
-    // Always-on cleanup helper used both for the "toggle off" branch
-    // and for React's unmount / dep-change cleanup.
-    const clearAllCharacterHighlights = () => {
-      if (supportsHighlightApi) {
-        try {
-          const highlights = (CSS as any).highlights;
-          const namesToRemove: string[] = [];
-          highlights.forEach((_: unknown, name: string) => {
-            if (name.startsWith(CHAR_HIGHLIGHT_PREFIX)) namesToRemove.push(name);
-          });
-          namesToRemove.forEach((name) => {
-            try { highlights.delete(name); } catch (e) {}
-          });
-        } catch (e) {}
-      }
-      const existingStyle = window.document.getElementById(CHAR_HIGHLIGHT_STYLE_ID);
-      if (existingStyle) existingStyle.remove();
-    };
+    // Always-on teardown helper (toggle-off branch, document switch, empty
+    // results). Dep-change cleanup deliberately does NOT call this — see the
+    // flicker fix note on the return cleanup below.
+    const clearAllCharacterHighlights = removeAllCharHighlightAssets;
 
     if (!characterNameHighlightEnabled) {
       clearAllCharacterHighlights();
@@ -1231,6 +1244,14 @@ export const TextEditor: React.FC<TextEditorProps> = ({
     if (!supportsHighlightApi || !editorRef.current) {
       clearAllCharacterHighlights();
       return;
+    }
+
+    // v0.7.98: on a document switch, drop the previous document's registrations
+    // immediately — their Ranges point at text nodes that are about to be
+    // replaced, and the fresh scan below re-anchors from scratch anyway.
+    if (charHighlightPrevDocIdRef.current !== document.id) {
+      charHighlightPrevDocIdRef.current = document.id;
+      clearAllCharacterHighlights();
     }
 
     // Debounce so rapid typing doesn't re-walk the DOM on every keystroke.
@@ -1416,25 +1437,34 @@ export const TextEditor: React.FC<TextEditorProps> = ({
     }, 220);
 
     return () => {
+      // v0.7.98 FLICKER FIX: this cleanup used to delete every registered
+      // character highlight AND the shared <style> tag immediately, while
+      // re-application waited behind the 220ms debounce above. That meant
+      // EVERY effect re-run — a keystroke (document.plainText), a pagination
+      // childList mutation (domStructureEpoch), a character-card edit
+      // (characters) — blacked the highlights out for at least 220ms. Users
+      // saw this as the highlights "briefly disappearing while the spelling
+      // check runs": the spellcheck rescan, the squiggle re-render and this
+      // blackout all land in the same post-typing window. The cleanup now
+      // only cancels the pending re-scan: the existing highlights stay
+      // painted (live Ranges keep tracking their text nodes through edits)
+      // and the debounced pass swaps old registrations for new ones inside a
+      // single synchronous task (delete + set + style update), so no paint
+      // can ever show the gap. Real teardown still happens on toggle-off
+      // (branch above), on document switch (ref check above) and on unmount
+      // (dedicated unmount-only cleanup below).
       if (timerId) clearTimeout(timerId);
-      // Clean up DOM highlights when toggled off, when characters change,
-      // or when the component unmounts.
-      if (typeof CSS !== 'undefined' && 'highlights' in CSS) {
-        try {
-          const highlights = (CSS as any).highlights;
-          const namesToRemove: string[] = [];
-          highlights.forEach((_: unknown, name: string) => {
-            if (name.startsWith(CHAR_HIGHLIGHT_PREFIX)) namesToRemove.push(name);
-          });
-          namesToRemove.forEach((name) => {
-            try { highlights.delete(name); } catch (e) {}
-          });
-        } catch (e) {}
-      }
-      const styleEl = window.document.getElementById(CHAR_HIGHLIGHT_STYLE_ID);
-      if (styleEl) styleEl.remove();
     };
   }, [characterNameHighlightEnabled, characters, document.plainText, document.id, domStructureEpoch]);
+
+  // v0.7.98: unmount-only teardown (leaving Write mode / app teardown).
+  // Dependency-change cleanups intentionally do NOT tear the highlights down —
+  // they are swapped atomically by the debounced pass instead.
+  useEffect(() => {
+    return () => {
+      removeAllCharHighlightAssets();
+    };
+  }, []);
 
   // Handle replacing misspelled word directly in the manuscript
   const handleReplaceMisspelledWord = (originalWord: string, replacement: string) => {
@@ -1631,6 +1661,17 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   const [pageStats, setPageStats] = useState({ current: 1, total: 1 });
   const isNormalizingPagesRef = useRef(false);
   const paginationFrameRef = useRef<number | null>(null);
+  // v0.7.97 scroll-stuck fix: set by normalizeDocumentPages() — true when the
+  // pass actually mutated DOM layout (margins/classes). Read by the
+  // ResizeObserver oscillation damper.
+  const paginationMutatedRef = useRef(false);
+  // v0.7.97: oscillation damper state — pagination itself resizes the editor,
+  // so the ResizeObserver re-fires after every mutating pass. A boundary
+  // flip-flop mutates on consecutive passes and would thrash layout.
+  const paginationStreakRef = useRef({ count: 0, lastAt: 0, cooldownUntil: 0 });
+  // v0.7.97: last known total page count, kept so the scroll handler can
+  // refresh the current-page indicator WITHOUT re-running the normalizer.
+  const totalPagesRef = useRef(1);
 
   const getTopLevelEditorBlock = useCallback((node: Node | null): HTMLElement | null => {
     if (!node || !editorRef.current) return null;
@@ -1658,19 +1699,23 @@ export const TextEditor: React.FC<TextEditorProps> = ({
     if (!editorRef.current || isNormalizingPagesRef.current) return;
     isNormalizingPagesRef.current = true;
     const editor = editorRef.current;
+    let mutated = false;
 
     try {
       // 1. Strip any legacy automatic page-break divs (only explicit manual page breaks remain)
       const autoBreaks = Array.from(editor.querySelectorAll('.mundus-page-break:not([data-manual-page-break])')) as HTMLElement[];
+      if (autoBreaks.length > 0) mutated = true;
       autoBreaks.forEach((pb) => pb.remove());
 
       const rawText = (editor.textContent || '').replace(/[\n\r\t\s\u00a0]+/g, '');
       if (!rawText) {
         const allChildren = Array.from(editor.children) as HTMLElement[];
+        mutated = allChildren.some((c) => Boolean(c.style.marginTop) || c.classList.contains('is-page-start') || c.classList.contains('mundus-page-start'));
         allChildren.forEach((child) => {
           child.style.removeProperty('margin-top');
           child.classList.remove('is-page-start', 'mundus-page-start');
         });
+        totalPagesRef.current = 1;
         setPageStats({ current: 1, total: 1 });
         return;
       }
@@ -1685,6 +1730,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
         if (child.classList.contains('is-page-start') || child.classList.contains('mundus-page-start')) {
           child.style.removeProperty('margin-top');
           child.classList.remove('is-page-start', 'mundus-page-start');
+          mutated = true;
         }
       });
 
@@ -1716,7 +1762,10 @@ export const TextEditor: React.FC<TextEditorProps> = ({
         if (child.classList.contains('mundus-manual-page-break') || child.hasAttribute('data-manual-page-break')) {
           const leftoverOnPrevPage = Math.max(0, PRINTABLE_MAX - currentPageHeight);
           const gap = leftoverOnPrevPage + BOTTOM_MARGIN + PAGE_GAP + TOP_MARGIN + trailingMargin;
-          child.style.marginTop = `${gap}px`;
+          const gapStr = `${gap}px`;
+          if (child.style.marginTop !== gapStr) mutated = true;
+          child.style.marginTop = gapStr;
+          if (!child.classList.contains('is-page-start')) mutated = true;
           child.classList.add('is-page-start', 'mundus-page-start');
           currentPage++;
           // The break divider itself renders at the top of the new sheet (pill + margins),
@@ -1767,9 +1816,11 @@ export const TextEditor: React.FC<TextEditorProps> = ({
           // Fits cleanly on current page
           if (child.style.marginTop) {
             child.style.removeProperty('margin-top');
+            mutated = true;
           }
           if (child.classList.contains('is-page-start')) {
             child.classList.remove('is-page-start', 'mundus-page-start');
+            mutated = true;
           }
           currentPageHeight += consumedHeight;
           trailingMargin = marginBottom;
@@ -1785,9 +1836,11 @@ export const TextEditor: React.FC<TextEditorProps> = ({
 
             if (child.style.marginTop !== gapStr) {
               child.style.marginTop = gapStr;
+              mutated = true;
             }
             if (!child.classList.contains('is-page-start')) {
               child.classList.add('is-page-start', 'mundus-page-start');
+              mutated = true;
             }
             currentPage++;
             // The inline page-gap margin-top replaces the block's own CSS margin-top
@@ -1797,9 +1850,11 @@ export const TextEditor: React.FC<TextEditorProps> = ({
             // Already at the top of a page, but block itself exceeds PRINTABLE_MAX (e.g. huge image or table)
             if (child.style.marginTop) {
               child.style.removeProperty('margin-top');
+              mutated = true;
             }
             if (child.classList.contains('is-page-start')) {
               child.classList.remove('is-page-start', 'mundus-page-start');
+              mutated = true;
             }
             // Track exactly how many full sheet cycles the block spans so the flow
             // position stays true (prevents cumulative drift after oversized blocks)
@@ -1813,6 +1868,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
 
       // 3. Compute final total pages and update active page from scroll position
       const finalTotal = Math.max(1, currentPage + 1);
+      totalPagesRef.current = finalTotal;
 
       const scrollArea = window.document.getElementById('editor-scroll-area');
       let current = 1;
@@ -1823,6 +1879,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
 
       setPageStats({ current, total: finalTotal });
     } finally {
+      paginationMutatedRef.current = mutated;
       isNormalizingPagesRef.current = false;
     }
   }, [BOTTOM_MARGIN, PAGE_CYCLE, PAGE_GAP, PRINTABLE_MAX, TOP_MARGIN]);
@@ -1830,6 +1887,21 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   const updatePageStats = useCallback(() => {
     normalizeDocumentPages();
   }, [normalizeDocumentPages]);
+
+  // v0.7.97 scroll-stuck fix: scrolling must NOT re-run the pagination engine.
+  // The normalizer mutates the virtual page-gap margins; running it on every
+  // scroll event near a page boundary made Chrome's scroll anchoring yank the
+  // viewport back toward the (moving) page-start block — a mutation ->
+  // anchoring-adjust -> scroll-event loop that trapped the view at the end of
+  // a page. The scroll handler now only refreshes the lightweight
+  // current-page indicator; real pagination stays on input/save/resize paths.
+  const updateCurrentPageFromScroll = useCallback(() => {
+    const scrollArea = window.document.getElementById('editor-scroll-area');
+    if (!scrollArea) return;
+    const total = Math.max(1, totalPagesRef.current);
+    const current = Math.min(total, Math.max(1, Math.floor((scrollArea.scrollTop + 350) / PAGE_CYCLE) + 1));
+    setPageStats((prev) => (prev.current === current && prev.total === total ? prev : { current, total }));
+  }, [PAGE_CYCLE]);
 
     // Recalibrate pagination when page format changes
   useEffect(() => {
@@ -1898,6 +1970,26 @@ export const TextEditor: React.FC<TextEditorProps> = ({
     const observer = new ResizeObserver(() => {
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
+        // v0.7.97 oscillation damper: a healthy document settles after one
+        // mutating pass; a boundary flip-flop mutates on consecutive passes
+        // and would thrash layout on every frame. If we detect a mutating
+        // streak, back off for a cooldown — genuine content changes still
+        // paginate through the direct input/save handlers, which bypass
+        // this damper entirely.
+        const now = Date.now();
+        const streak = paginationStreakRef.current;
+        if (paginationMutatedRef.current) {
+          streak.count = now - streak.lastAt < 800 ? streak.count + 1 : 1;
+          streak.lastAt = now;
+        } else {
+          streak.count = 0;
+        }
+        if (now < streak.cooldownUntil) return;
+        if (streak.count >= 4) {
+          streak.cooldownUntil = now + 600;
+          streak.count = 0;
+          return;
+        }
         queuePagination();
       }, 100);
     });
@@ -6570,7 +6662,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
       <main 
         id="editor-scroll-area"
         ref={editorScrollContainerRef}
-        onScroll={updatePageStats}
+        onScroll={updateCurrentPageFromScroll}
         onTouchStart={handleEditorTouchStart}
         onTouchMove={handleEditorTouchMove}
         onTouchEnd={handleEditorTouchEnd}

@@ -566,3 +566,41 @@ input[type="number"]:focus::-webkit-inner-spin-button {
 .mundus-toast {
   animation: mundus-toast-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* ============================================================
+   PWA safe-area support (v0.7.96-iPad)
+   Standalone full-bleed mode on iPad: the shell's own background
+   still paints edge-to-edge, while interactive content is padded
+   away from the status bar (notch) and home indicator.
+   env() evaluates to 0px on desktop browsers, Electron and
+   non-cutout Android, so this is a no-op everywhere else.
+   ============================================================ */
+#app-root {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+}
+
+/* Track the visible viewport inside in-browser Safari (toolbars
+   collapse/expand) instead of the static 100vh; identical to
+   h-screen on desktop and in standalone mode. */
+@supports (height: 100dvh) {
+  #app-root {
+    height: 100dvh;
+  }
+}
+
+/* ============================================================
+   v0.7.97 scroll-stuck fix: the editor's pagination engine
+   mutates block margins (virtual page gaps) while layout is
+   measured. Chrome's scroll anchoring compensates each mutation
+   by re-adjusting scrollTop toward the moving page-start block,
+   which could trap the viewport at the end of a page (scroll up
+   -> pulled back down). Anchoring is counterproductive here:
+   the editor manages scroll explicitly, so opt this scroller
+   out entirely. No-op where overflow-anchor is unsupported.
+   ============================================================ */
+#editor-scroll-area {
+  overflow-anchor: none;
+}

@@ -864,7 +864,6 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                         <div className="space-y-2.5 py-1 relative w-full -ml-4">
                           {placedDocs.map((doc) => {
                             const placement = getScenePlacement(doc)!;
-                            const isDraft = doc.status === 'draft';
                             const startYear = doc.timelineInfo?.startYear ?? 0;
                             const startMonth = doc.timelineInfo?.startMonth ?? 1;
                             const startDay = doc.timelineInfo?.startDay ?? 1;
@@ -888,8 +887,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                 >
                                   <div className="flex items-center justify-between gap-2 overflow-hidden mb-1">
                                     <div className="flex items-center gap-2 min-w-0">
+                                      {/* v0.7.98: editor status scheme — complete =
+                                          green, revision = yellow, draft = grey. */}
                                       <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                                        isDraft ? 'bg-amber-400 ring-2 ring-amber-400/20' : 'bg-emerald-400 ring-2 ring-emerald-400/20'
+                                        doc.status === 'complete' ? 'bg-emerald-500 ring-2 ring-emerald-500/20' : doc.status === 'revision' ? 'bg-amber-500 ring-2 ring-amber-500/20' : 'bg-neutral-400 ring-2 ring-neutral-400/20'
                                       }`} />
                                       <span className="text-xs sm:text-sm font-bold truncate font-display group-hover:text-accent transition-colors">
                                         {doc.title}
