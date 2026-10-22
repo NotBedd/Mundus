@@ -18,7 +18,7 @@
 - [Features Overview](#atlas)
 - [Installing](#installing)
 - [Updating](#updating)
-- [Credits, Licenses & Other Info](#credits)
+- [Credits & Other Info](#credits-and-other-info)
 
 <br>
 
@@ -208,7 +208,7 @@ Congratulations!
 
 <br>
 
-## Credits
+## Credits and other info
 
 ### Acknowledgements
 #### This project uses:
