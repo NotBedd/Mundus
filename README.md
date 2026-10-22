@@ -13,6 +13,8 @@
 
 </div>
 
+<h2 align="center"> If you end up using the app, please remember to always make backups before updating! I try my best to test and make sure things work correctly but it's impossible to guarantee it. </h2>
+
 ## Index
 
 - [Features Overview](#atlas)
