@@ -19,7 +19,7 @@
 - [Installing](#installing)
 - [Updating](#updating)
 - [Technical Details and Known limitations if you're interested](#technical-details-and-known-limitations)
-- [Credits, Licenses & Other Info](#credits)
+- [Credits, Licenses & Other Info](#credits-and-other-info)
 
 <br>
 
@@ -221,7 +221,7 @@ Congratulations!
 
 <br><br>
 
-## Credits
+## Credits and Other info
 
 ### Acknowledgements
 
@@ -240,4 +240,13 @@ Congratulations!
 - This project uses [Harper](https://github.com/Automattic/harper) for the autocorrect feature.
 
 ### Other Informations
+
+- Where Your Data Is Stored on Disk
+
+  By default, Mundus creates a `mundus_data` folder:
+  - If the application directory is writable (e.g. portable app or selected user folder in Installer), it creates `mundus_data/` right inside the app folder.
+  - If installed in a protected directory (such as `C:\Program Files`, if selected "pc" in Installer), it safely uses:
+    - **Windows**: `%APPDATA%/mundus-app/mundus_data`
+    - **macOS**: `~/Library/Application Support/mundus-app/mundus_data`
+    - **Linux**: `~/.config/mundus-app/mundus_data`
 - This project was developed with the help of AI tools, mainly Google AI Studio and z.ai's GLM Agent chat
