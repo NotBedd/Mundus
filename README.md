@@ -230,6 +230,10 @@ Congratulations!
 ### Multiple partners relationships in the family tree graph
 - The issue with family trees and individual with multiple partners is recognized by GEDCOM (the standard used for genealogy data) and while a newer system capable of handling it has been promised, nothing has arrived yet. Applications and websites have multiple ways of handling this, however none really looks satisfying to me, hence why I decided for know to treat this as a known limitation and leave it unaddressed, currently characters only display the union box with their first assigned partner, and children with other ones appear as ones with a single parent do
 
+### About Electron
+- I am aware an electron wrapped webapp isn't the best option in terms of overhead and RAM usage, however I deemed the compromises in complexity of development and inconsistencies between OSes to not be heavy enough.
+- I have considered a Tauri conversion, but the work required is much more than what I can (and honestly am willing to) handle at least at the moment
+
 <br><br>
 
 ## Credits and Other info
