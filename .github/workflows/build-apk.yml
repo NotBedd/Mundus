@@ -90,6 +90,30 @@ jobs:
         run: |
           ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
                 --jq '.[] | select(.draft and .name == env.RELEASE_NAME) | .id' | head -n1)
+          [ -n "$ID" ] || { echo "::error::No DRAFT release titled '$RELEASE_NAME' found. Keep it a draft (do NOT publish) and match the title exactly."; exit 1; }
+          echo "Draft release id: $ID"
+          for f in ${{ steps.apk.outputs.paths }}; do
+            NAME=$(basename "$f")
+            OLD=$(gh api "repos/$GITHUB_REPOSITORY/releases/$ID/assets" \
+                  --jq ".[] | select(.name == \"$NAME\") | .id" | head -n1)
+            if [ -n "$OLD" ]; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$OLD" || true
+            fi
+            # FIX: asset uploads must go to uploads.github.com — api.github.com 404s this path
+            gh api --method POST \
+              -H "Content-Type: application/octet-stream" \
+              --input "$f" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$ID/assets?name=$NAME" \
+              --jq '"Attached: " + .name + " (" + (.size|tostring) + " bytes)"'
+          done
+          echo "APK attached to draft '$RELEASE_NAME' (private to you)"      - name: Attach APK to the draft (only you can see it)
+        if: ${{ inputs.attach_apk_to_draft }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NAME: ${{ inputs.release_name }}
+        run: |
+          ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+                --jq '.[] | select(.draft and .name == env.RELEASE_NAME) | .id' | head -n1)
           for f in ${{ steps.apk.outputs.paths }}; do
             NAME=$(basename "$f")
             # delete a previous copy so rebuilds never fail on duplicate names
