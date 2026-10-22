@@ -1,4 +1,4 @@
-import { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer } from 'docx';
+import { Document, Paragraph, TextRun, HeadingLevel, AlignmentType, Packer, ImageRun, PageBreak, ShadingType, type ParagraphChild } from 'docx';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { NovelDocument, CustomFont, GoogleFontItem, DocumentVisualImage, PageFormatConfig } from '../types';
@@ -1429,90 +1429,227 @@ export async function exportToPdf(doc: NovelDocument, optionsOrFormat?: ExportPd
 export async function exportToDocx(doc: NovelDocument) {
   const cleanTitle = doc.title || 'Untitled Document';
   const html = doc.content || `<p>${doc.plainText}</p>`;
-  
+
   const parser = new DOMParser();
   const htmlDoc = parser.parseFromString(html, 'text/html');
-  
+
+  /* ------------------------------------------------------------------
+   * v0.8.1 DOCX EXPORT REWRITE.
+   * The v0.7.x converter only handled flat top-level blocks and
+   * single-level inline runs (no nested formatting, no lists, no colors,
+   * no highlighters, no images). The rewrite walks the content tree
+   * recursively so a Mundus document lands in Word with the same
+   * structure: headings, bold/italic/underline/strike (nested to any
+   * depth), text colors, highlighter shading, bullet/numbered lists,
+   * inline images (data URLs), and manual page breaks.
+   * ------------------------------------------------------------------ */
+
+  /** "rgb(21, 128, 61)" / "#15803d" → "15803D" (docx wants hex, no #). */
+  const colorToHex = (color: string): string | null => {
+    if (!color) return null;
+    const c = color.trim();
+    if (c.startsWith('#')) {
+      const hex = c.slice(1);
+      return /^[0-9a-fA-F]{6}$/.test(hex) ? hex.toUpperCase() : null;
+    }
+    const m = c.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+    if (m) {
+      const to2 = (n: string) => Math.max(0, Math.min(255, parseInt(n, 10))).toString(16).padStart(2, '0');
+      return `${to2(m[1])}${to2(m[2])}${to2(m[3])}`.toUpperCase();
+    }
+    return null;
+  };
+
+  interface InlineStyle {
+    bold?: boolean;
+    italics?: boolean;
+    underline?: boolean;
+    strike?: boolean;
+    color?: string;   // docx hex
+    shading?: string; // docx hex fill
+  }
+
+  /** Merge styles down the inline tree (outer style + inner overrides). */
+  const computeInline = (el: Element, inherited: InlineStyle): InlineStyle => {
+    const style: InlineStyle = { ...inherited };
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'strong' || tag === 'b') style.bold = true;
+    if (tag === 'em' || tag === 'i') style.italics = true;
+    if (tag === 'u') style.underline = true;
+    if (tag === 's' || tag === 'strike' || tag === 'del') style.strike = true;
+    if (tag === 'font') {
+      const c = el.getAttribute('color');
+      if (c) style.color = colorToHex(c) || style.color;
+    }
+    const html = el as HTMLElement;
+    if (html.style) {
+      const fw = html.style.fontWeight;
+      if (fw && (fw === 'bold' || parseInt(fw, 10) >= 600)) style.bold = true;
+      if (html.style.fontStyle === 'italic') style.italics = true;
+      const td = html.style.textDecorationLine || html.style.textDecoration || '';
+      if (/\bunderline\b/i.test(td)) style.underline = true;
+      if (/\bline-through\b/i.test(td)) style.strike = true;
+      const colorHex = colorToHex(html.style.color || '');
+      if (colorHex) style.color = colorHex;
+      const bgHex = colorToHex(html.style.backgroundColor || '');
+      if (bgHex && bgHex !== 'FFFFFF') style.shading = bgHex;
+    }
+    if (el.hasAttribute('data-mundus-hl')) {
+      const bgHex = colorToHex((el as HTMLElement).style?.backgroundColor || '');
+      if (bgHex) style.shading = bgHex;
+    }
+    return style;
+  };
+
+  const inlineRunsFrom = (node: Node, style: InlineStyle): ParagraphChild[] => {
+    const runs: ParagraphChild[] = [];
+    node.childNodes.forEach((child) => {
+      if (child.nodeType === Node.TEXT_NODE) {
+        const text = (child.nodeValue || '').replace(/\u200B/g, '');
+        if (!text) return;
+        runs.push(new TextRun({
+          text,
+          bold: style.bold || undefined,
+          italics: style.italics || undefined,
+          underline: style.underline ? {} : undefined,
+          strike: style.strike || undefined,
+          color: style.color || undefined,
+          shading: style.shading ? { type: ShadingType.CLEAR, fill: style.shading } : undefined,
+        }));
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const el = child as Element;
+        const tag = el.tagName.toLowerCase();
+        if (tag === 'br') {
+          runs.push(new TextRun({ text: '', break: 1 }));
+          return;
+        }
+        if (tag === 'img') {
+          const src = el.getAttribute('src') || '';
+          const dataUrlMatch = src.match(/^data:image\/([a-zA-Z0-9.+-]+);base64,(.+)$/s);
+          if (dataUrlMatch) {
+            try {
+              const mime = dataUrlMatch[1].toLowerCase();
+              const docxType = mime.includes('png') ? 'png' : mime.includes('gif') ? 'gif' : mime.includes('bmp') ? 'bmp' : 'jpg';
+              const bytes = Uint8Array.from(atob(dataUrlMatch[2]), (ch) => ch.charCodeAt(0));
+              const rawW = parseInt(el.getAttribute('width') || '0', 10) || 400;
+              const rawH = parseInt(el.getAttribute('height') || '0', 10) || Math.round(rawW * 0.6);
+              const scale = Math.min(1, 450 / Math.max(rawW, 1));
+              runs.push(new ImageRun({
+                type: docxType,
+                data: bytes,
+                transformation: { width: Math.max(32, Math.round(rawW * scale)), height: Math.max(24, Math.round(rawH * scale)) },
+              } as any));
+            } catch { /* unreadable image — skip, text flows on */ }
+          }
+          return;
+        }
+        const next = computeInline(el, style);
+        runs.push(...inlineRunsFrom(el, next));
+      }
+    });
+    return runs;
+  };
+
+  const headingFor = (tag: string): (typeof HeadingLevel)[keyof typeof HeadingLevel] | undefined => {
+    if (tag === 'h1') return HeadingLevel.HEADING_1;
+    if (tag === 'h2') return HeadingLevel.HEADING_2;
+    if (tag === 'h3' || tag === 'h4' || tag === 'h5' || tag === 'h6') return HeadingLevel.HEADING_3;
+    return undefined;
+  };
+
   const paragraphs: Paragraph[] = [
     new Paragraph({
       text: cleanTitle,
       heading: HeadingLevel.HEADING_1,
       alignment: AlignmentType.CENTER,
-      spacing: { after: 300 }
-    })
+      spacing: { after: 300 },
+    }),
   ];
 
-  const bodyChildren = Array.from(htmlDoc.body.childNodes);
-  
-  for (const node of bodyChildren) {
-    if (node.nodeType === Node.ELEMENT_NODE) {
+  const pushRunsAsParagraph = (runs: ParagraphChild[], base: Partial<{ heading: ReturnType<typeof headingFor>; indentLeft: number; bullet: boolean }> = {}) => {
+    if (runs.length === 0) return;
+    paragraphs.push(new Paragraph({
+      children: runs,
+      ...(base.heading ? { heading: base.heading } : {}),
+      ...(base.indentLeft ? { indent: { left: base.indentLeft } } : {}),
+      ...(base.bullet ? { bullet: { level: 0 } } : {}),
+      spacing: { line: 360, after: base.bullet || base.indentLeft ? 60 : 120 },
+    }));
+  };
+
+  /** Recursively turns block-level nodes into docx paragraphs. */
+  const walkBlocks = (parent: Node, indentLeft = 0) => {
+    parent.childNodes.forEach((node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = (node.nodeValue || '').replace(/\u200B/g, '').trim();
+        if (text) pushRunsAsParagraph([new TextRun({ text })]);
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
       const el = node as HTMLElement;
       const tag = el.tagName.toLowerCase();
-      
-      if (tag.startsWith('h')) {
-        const level = tag === 'h1' ? HeadingLevel.HEADING_1 : tag === 'h2' ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3;
-        paragraphs.push(new Paragraph({
-          text: el.textContent || '',
-          heading: level,
-          spacing: { before: 200, after: 100 }
-        }));
-      } else if (tag === 'p') {
-        const runs: TextRun[] = [];
-        el.childNodes.forEach((child) => {
-          if (child.nodeType === Node.TEXT_NODE) {
-            runs.push(new TextRun({ text: child.textContent || '' }));
-          } else if (child.nodeType === Node.ELEMENT_NODE) {
-            const childEl = child as HTMLElement;
-            const childTag = childEl.tagName.toLowerCase();
-            const isBold = childTag === 'strong' || childTag === 'b';
-            const isItalic = childTag === 'em' || childTag === 'i';
-            const isUnderline = childTag === 'u';
-            
-            runs.push(new TextRun({
-              text: childEl.textContent || '',
-              bold: isBold,
-              italics: isItalic,
-              underline: isUnderline ? {} : undefined
-            }));
+
+      if (el.classList?.contains('mundus-manual-page-break')) {
+        paragraphs.push(new Paragraph({ children: [new PageBreak()] }));
+        return;
+      }
+      // Visual-image portals: the saved content keeps them EMPTY
+      // (cleanHtmlForSaving strips portal children) — skip silently.
+      if (el.hasAttribute?.('data-visual-image-id')) return;
+
+      if (tag === 'h1' || tag === 'h2' || tag === 'h3' || tag === 'h4' || tag === 'h5' || tag === 'h6') {
+        const runs = inlineRunsFrom(el, {});
+        if (runs.length) pushRunsAsParagraph(runs, { heading: headingFor(tag) });
+        else pushRunsAsParagraph([new TextRun({ text: el.textContent || '' })], { heading: headingFor(tag) });
+        return;
+      }
+      if (tag === 'p') {
+        const runs = inlineRunsFrom(el, {});
+        if (runs.length) pushRunsAsParagraph(runs);
+        return;
+      }
+      if (tag === 'blockquote') {
+        const runs = inlineRunsFrom(el, { italics: true });
+        if (runs.length) pushRunsAsParagraph(runs, { indentLeft: 720 });
+        return;
+      }
+      if (tag === 'ul' || tag === 'ol') {
+        const wasOl = tag === 'ol';
+        let idx = 0;
+        el.querySelectorAll(':scope > li').forEach((li) => {
+          idx += 1;
+          const runs = inlineRunsFrom(li, {});
+          if (wasOl) {
+            const numbered: ParagraphChild[] = [new TextRun({ text: `${idx}. `, bold: false }), ...runs];
+            pushRunsAsParagraph(numbered, { indentLeft: 360 });
+          } else {
+            pushRunsAsParagraph(runs.length ? runs : [new TextRun({ text: li.textContent || '' })], { bullet: true });
           }
         });
-        
-        paragraphs.push(new Paragraph({
-          children: runs.length > 0 ? runs : [new TextRun({ text: el.textContent || '' })],
-          spacing: { line: 360, after: 120 }
-        }));
-      } else if (tag === 'blockquote') {
-        paragraphs.push(new Paragraph({
-          children: [new TextRun({ text: el.textContent || '', italics: true })],
-          spacing: { before: 120, after: 120 },
-          indent: { left: 720 }
-        }));
-      } else {
-        if (el.textContent?.trim()) {
-          paragraphs.push(new Paragraph({
-            text: el.textContent.trim(),
-            spacing: { after: 120 }
-          }));
-        }
+        return;
       }
-    } else if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
-      paragraphs.push(new Paragraph({
-        text: node.textContent.trim(),
-        spacing: { after: 120 }
-      }));
-    }
-  }
+      if (tag === 'div' || tag === 'section' || tag === 'article' || tag === 'main' || tag === 'body') {
+        walkBlocks(el, indentLeft);
+        return;
+      }
+      // Unknown inline-ish node with text → its own paragraph.
+      const text = el.textContent?.trim();
+      if (text) pushRunsAsParagraph(inlineRunsFrom(el, {}));
+    });
+  };
+
+  walkBlocks(htmlDoc.body);
 
   const docxFile = new Document({
     sections: [{
       properties: {},
-      children: paragraphs
-    }]
+      children: paragraphs,
+    }],
   });
 
   const blob = await Packer.toBlob(docxFile);
   const safeFilename = `${cleanTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}.docx`;
-  
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

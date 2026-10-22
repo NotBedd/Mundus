@@ -22,7 +22,7 @@ import {
   Clock,
   User
 } from 'lucide-react';
-import type { CodexEntry, Character } from '../../types';
+import type { CodexEntry, Character, CodexSection } from '../../types';
 import { getMarkerForCodexEntry } from '../../utils/mapUtils';
 import { detectInSceneEntryIds, detectInSceneCharacterIds } from '../../lib/sceneDetection';
 
@@ -34,6 +34,9 @@ interface InThisSceneDrawerProps {
   documentPlainText?: string;
   isDarkMode: boolean;
   activeMundusId?: string;
+  /** v0.8.0: the active project's Codex sections, so renamed categories show
+   *  their current labels instead of the raw default ids (e.g. "Factions"). */
+  codexSections?: CodexSection[];
   onNavigateToMap?: (codexId: string, markerId?: string) => void;
   onOpenNewCodexEntry?: (initialTitle?: string) => void;
   onSelectCodexEntry?: (entry: CodexEntry) => void;
@@ -49,6 +52,7 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
   documentPlainText = '',
   isDarkMode,
   activeMundusId = 'default',
+  codexSections,
   onNavigateToMap,
   onOpenNewCodexEntry,
   onSelectCodexEntry,
@@ -112,6 +116,14 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
     [characters, documentPlainText]
   );
 
+  // v0.8.0: entries store the section ID — display the section's current
+  // (possibly renamed) label, falling back to the raw id for unknown ones.
+  const categoryLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    (codexSections || []).forEach((s) => map.set(s.id, s.label));
+    return (cat: string): string => map.get(cat) || cat;
+  }, [codexSections]);
+
   const displayedCharacters = useMemo(() => {
     if (filterMode === 'all') return [];
     return characters.filter((char) => {
@@ -157,10 +169,11 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
         (entry.subtitle && entry.subtitle.toLowerCase().includes(q)) ||
         (entry.overview && entry.overview.toLowerCase().includes(q)) ||
         (entry.tags && entry.tags.some((t) => t.toLowerCase().includes(q))) ||
-        (entry.category && entry.category.toLowerCase().includes(q))
+        (entry.category && entry.category.toLowerCase().includes(q)) ||
+        categoryLabel(entry.category).toLowerCase().includes(q)
       );
     });
-  }, [codexEntries, detectedEntryIds, filterMode, selectedCategoryFilter, searchQuery]);
+  }, [codexEntries, detectedEntryIds, filterMode, selectedCategoryFilter, searchQuery, categoryLabel]);
 
   // Extract distinct categories
   const categories = useMemo(() => {
@@ -197,9 +210,6 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold font-display tracking-tight">Scene Codex</h3>
-              <p className="text-[10px] text-neutral-400 font-mono">
-                {detectedEntryIds.size} {detectedEntryIds.size === 1 ? 'codex entry' : 'codex entries'} detected in this scene
-              </p>
             </div>
           </div>
 
@@ -271,7 +281,9 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
               }`}
             >
               <BookOpen className="w-3 h-3 text-neutral-400" />
-              <span className="truncate">Codex</span>
+              <span className="truncate" title="Codex entries detected in this scene">
+                Codex ({detectedEntryIds.size})
+              </span>
             </button>
             
             <button
@@ -336,7 +348,7 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                       : 'bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50'
                   }`}
                 >
-                  {cat}
+                  {categoryLabel(cat)}
                 </button>
               ))}
             </div>
@@ -389,7 +401,7 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                             Character
                           </span>
                         </div>
-                        <h4 className="text-sm font-bold font-display leading-tight text-neutral-100 dark:text-white group-hover:text-accent transition-colors">
+                        <h4 className="text-sm font-bold font-display leading-tight text-neutral-900 dark:text-white group-hover:text-accent transition-colors">
                           {char.name}
                         </h4>
                         {char.aliases && (
@@ -398,7 +410,7 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                           </p>
                         )}
                         {char.roles && char.roles.length > 0 && (
-                          <p className="text-xs text-neutral-300 dark:text-neutral-400 line-clamp-1">
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
                             {char.roles.join(' • ')}
                           </p>
                         )}
@@ -449,22 +461,22 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                               color: entry.themeColor || '#3b82f6'
                             }}
                           >
-                            {entry.category}
+                            {categoryLabel(entry.category)}
                           </span>
                         </div>
 
-                        <h4 className="text-sm font-bold font-display leading-tight text-neutral-100 dark:text-white">
+                        <h4 className="text-sm font-bold font-display leading-tight text-neutral-900 dark:text-white">
                           {entry.title}
                         </h4>
 
                         {entry.subtitle && (
-                          <p className="text-xs text-neutral-400 font-serif italic">
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400 font-serif italic">
                             {entry.subtitle}
                           </p>
                         )}
 
                         {entry.overview && (
-                          <p className="text-xs text-neutral-300 dark:text-neutral-400 line-clamp-2 leading-relaxed">
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-2 leading-relaxed">
                             {entry.overview}
                           </p>
                         )}
@@ -489,7 +501,7 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                       <div className="flex items-center gap-1 shrink-0 pt-0.5">
                         <button
                           type="button"
-                          className="p-1 text-neutral-400 hover:text-white transition-colors"
+                          className="p-1 text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition-colors"
                           title="Expand full dossier"
                         >
                           <ChevronRight className="w-4 h-4" />
@@ -505,7 +517,7 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                       {(() => {
                         const marker = getMarkerForCodexEntry(entry, activeMundusId);
                         return (
-                          <div className="flex items-center justify-between gap-2 pb-2 border-b border-neutral-800/60 flex-wrap">
+                          <div className="flex items-center justify-between gap-2 pb-2 border-b border-neutral-200 dark:border-neutral-800/60 flex-wrap">
                             <div className="flex items-center gap-2">
                               <span 
                                 className="text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-md font-bold"
@@ -514,7 +526,7 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                                   color: entry.themeColor || '#3b82f6'
                                 }}
                               >
-                                {entry.category}
+                                {categoryLabel(entry.category)}
                               </span>
                             </div>
 
@@ -543,7 +555,11 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                                     onSelectCodexEntry(entry);
                                     onClose();
                                   }}
-                                  className="px-2.5 py-1 rounded-lg border border-neutral-700 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 hover:text-white text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                                  className={`px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                                    isDarkMode
+                                      ? 'border-neutral-700 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 hover:text-white'
+                                      : 'border-neutral-300 bg-white hover:bg-neutral-100 text-neutral-700 hover:text-neutral-900'
+                                  }`}
                                   title="Open this entry in Lore Mode"
                                 >
                                   <ExternalLink className="w-3.5 h-3.5 text-neutral-400" />
@@ -563,8 +579,10 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                                 }}
                                 className={`px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs ${
                                   editingEntryId === entry.id 
-                                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-400' 
-                                    : 'border-neutral-700 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 hover:text-white'
+                                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-500 dark:text-amber-400' 
+                                    : isDarkMode
+                                    ? 'border-neutral-700 bg-neutral-800 hover:bg-neutral-750 text-neutral-200 hover:text-white'
+                                    : 'border-neutral-300 bg-white hover:bg-neutral-100 text-neutral-700 hover:text-neutral-900'
                                 }`}
                                 title={editingEntryId === entry.id ? 'Cancel editing' : 'Edit entry details'}
                               >
@@ -578,7 +596,11 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                                   e.stopPropagation();
                                   setSelectedEntry(null);
                                 }}
-                                className="p-1.5 rounded-lg border border-neutral-700 bg-neutral-800 hover:bg-neutral-750 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                                className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                                  isDarkMode
+                                    ? 'border-neutral-700 bg-neutral-800 hover:bg-neutral-750 text-neutral-400 hover:text-white'
+                                    : 'border-neutral-300 bg-white hover:bg-neutral-100 text-neutral-500 hover:text-neutral-900'
+                                }`}
                                 title="Collapse details"
                               >
                                 <ChevronDown className="w-3.5 h-3.5" />
@@ -599,7 +621,9 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                               type="text"
                               value={editTitle}
                               onChange={(e) => setEditTitle(e.target.value)}
-                              className="w-full text-xs p-2 rounded-lg bg-neutral-900 border border-neutral-700 text-neutral-100 focus:outline-none focus:border-accent"
+                              className={`w-full text-xs p-2 rounded-lg border focus:outline-none focus:border-accent ${
+                                isDarkMode ? 'bg-neutral-900 border-neutral-700 text-neutral-100' : 'bg-white border-neutral-300 text-neutral-900'
+                              }`}
                             />
                           </div>
                           <div>
@@ -610,7 +634,9 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                               type="text"
                               value={editSubtitle}
                               onChange={(e) => setEditSubtitle(e.target.value)}
-                              className="w-full text-xs p-2 rounded-lg bg-neutral-900 border border-neutral-700 text-neutral-100 focus:outline-none focus:border-accent"
+                              className={`w-full text-xs p-2 rounded-lg border focus:outline-none focus:border-accent ${
+                                isDarkMode ? 'bg-neutral-900 border-neutral-700 text-neutral-100' : 'bg-white border-neutral-300 text-neutral-900'
+                              }`}
                             />
                           </div>
                           <div>
@@ -621,7 +647,9 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                               rows={3}
                               value={editOverview}
                               onChange={(e) => setEditOverview(e.target.value)}
-                              className="w-full text-xs p-2 rounded-lg bg-neutral-900 border border-neutral-700 text-neutral-100 focus:outline-none focus:border-accent resize-none font-serif"
+                              className={`w-full text-xs p-2 rounded-lg border focus:outline-none focus:border-accent resize-none font-serif ${
+                                isDarkMode ? 'bg-neutral-900 border-neutral-700 text-neutral-100' : 'bg-white border-neutral-300 text-neutral-900'
+                              }`}
                             />
                           </div>
                           <div>
@@ -632,14 +660,18 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                               rows={5}
                               value={editContent}
                               onChange={(e) => setEditContent(e.target.value)}
-                              className="w-full text-xs p-2 rounded-lg bg-neutral-900 border border-neutral-700 text-neutral-100 focus:outline-none focus:border-accent resize-y font-serif"
+                              className={`w-full text-xs p-2 rounded-lg border focus:outline-none focus:border-accent resize-y font-serif ${
+                                isDarkMode ? 'bg-neutral-900 border-neutral-700 text-neutral-100' : 'bg-white border-neutral-300 text-neutral-900'
+                              }`}
                             />
                           </div>
                           <div className="flex justify-end gap-2 pt-1">
                             <button
                               type="button"
                               onClick={() => setEditingEntryId(null)}
-                              className="px-3 py-1.5 rounded-lg border border-neutral-700 text-xs font-medium text-neutral-300 hover:bg-neutral-800"
+                              className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                                isDarkMode ? 'border-neutral-700 text-neutral-300 hover:bg-neutral-800' : 'border-neutral-300 text-neutral-600 hover:bg-neutral-100'
+                              }`}
                             >
                               Cancel
                             </button>
@@ -657,7 +689,7 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                         /* Standard View Mode (Matching Image Header & Sections) */
                         <>
                           <div className="space-y-1">
-                            <h3 className="text-base font-bold font-display tracking-wide uppercase text-neutral-100">
+                            <h3 className="text-base font-bold font-display tracking-wide uppercase text-neutral-900 dark:text-white">
                               {entry.title}
                             </h3>
                             {entry.subtitle && (
@@ -673,7 +705,9 @@ export const InThisSceneDrawer: React.FC<InThisSceneDrawerProps> = ({
                               {entry.tags.map((t) => (
                                 <span 
                                   key={t}
-                                  className="text-[10px] px-2 py-0.5 rounded-md font-mono bg-neutral-800/90 text-neutral-400 border border-neutral-700/60"
+                                  className={`text-[10px] px-2 py-0.5 rounded-md font-mono border ${
+                                    isDarkMode ? 'bg-neutral-800/90 text-neutral-400 border-neutral-700/60' : 'bg-neutral-100 text-neutral-500 border-neutral-200'
+                                  }`}
                                 >
                                   #{t}
                                 </span>

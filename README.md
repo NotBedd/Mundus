@@ -7,9 +7,7 @@
 
 <p>A free, open source story-making suite made for writers, offering all the features you need to bring your story to life and always keep track of it.</p>
 
-<p>Brainstorming your ideas by talking, writing down a draft, detailing a profile for each character, placing everything down on a map, all you need in one single app, synced between devices, no more jumping between programs and websites.</p>
-
-<p>Mundus works on Windows, Linux, MacOS, Android and iOS/iPadOS (PWA for iOS/iPadOS)</p>
+<p>Brainstorming your ideas by talking, writing down a draft, detailing a profile for each character, place everything on a map, all you need in one single app, synced between devices, no more jumping between programs and websites.</p>
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/notbed)
 
@@ -20,13 +18,11 @@
 - [Features Overview](#atlas)
 - [Installing](#installing)
 - [Updating](#updating)
-- [Technical Details and Known limitations if you're interested](#technical-details-and-known-limitations)
-- [Credits, Licenses & Other Info](#credits-and-other-info)
+- [Credits, Licenses & Other Info](#credits)
 
 <br>
 
 ## Mundus is divided into 6 "Modes": 4 for the active creation process, 2 for managing it:
-#### (If you don't want to read, hovering over every button shows what it does)
 (some of the pictures below are taken from the android version on a tablet to make them more readable in the smaller format) 
 
 <p> 
@@ -116,9 +112,7 @@ Family Tree Graph:
 - Can be filtered similarly to the characters 
 <img width="2944" height="1766" alt="CharactersFixed" src="https://github.com/user-attachments/assets/8ac37b79-34a2-40f8-868e-bb9c8e6bfbbe" />
 <img width="2944" height="1766" alt="FamilyTree" src="https://github.com/user-attachments/assets/e9ac429a-29ea-46a5-85fa-13b68a574001" />
-
-(If you look above, the "Missing" character has only the father assigned, so their line doesn't come from the union of the ones above)
-(The family tree graph has some known and deliberate limitations, read more details [here](#multiple-partners-relationships-in-the-family-tree-graph))
+(If you look above, the "Missing" character has only the father assigned, so their line doesn't come from the union of the ones above) 
 
 <br>
 
@@ -192,11 +186,6 @@ Congratulations!
 ### Android
 - Download and install the apk file (it might ask for permission as its not signed)
 
-### iPhone / iPad
-- Open mundus-ipados.netlify.app in Safari (untested on other browsers but should work)
-- Do share -> add to homescreen
-- Always launch the app from the homescreen icon
-
 ## Updating
 
 **WINDOWS**
@@ -217,26 +206,9 @@ Congratulations!
 ### Android
 - Download and install the newer apk, it will ask to update, say yes (might also ask for permission again as its not signed)
 
-### iPhone / iPad
-- Visit mundus-ipados.netlify.app again and just repeat the process from install, you can delete the old icon after creating the new one
+<br>
 
-<br><br>
-
-## Technical Details and Known limitations
-
-### The pagination system
-- Pagination has been historically hard to do on browsers, even modern ones still don't support proper pages to separate content, they can only handle a single text box called "ContentEditable", this means that using a webapp format like Mundus does for compatibility and consistency also prevents you from having a proper pagination system and pixel-perfect sentence breaks. Mundus tries to solve this with an engine that generates that dynamically splits the ContentEditable content based off size chunks and displays them onto virtual pages. After some work this approach ended up working relatively well, with the only major drawback still present and inherently unsolvable being the inability to break sentences or paragraphs off and split them between pages, this is why you may see inconsistencies in the "bottom margin" of your pages, if your paragraph is too big to fit within the remaining page space, the pagination engine will move all of it to the next page. This behavior can be easily accounted for by splitting paragraphs with periods without going to a new line and thus not breaking the reading flow significantly.
-
-### Multiple partners relationships in the family tree graph
-- The issue with family trees and individual with multiple partners is recognized by GEDCOM (the standard used for genealogy data) and while a newer system capable of handling it has been promised, nothing has arrived yet. Applications and websites have multiple ways of handling this, however none really looks satisfying to me, hence why I decided for know to treat this as a known limitation and leave it unaddressed, currently characters only display the union box with their first assigned partner, and children with other ones appear as ones with a single parent do
-
-### About Electron
-- I am aware an electron wrapped webapp isn't the best option in terms of overhead and RAM usage, however I deemed the compromises in complexity of development and inconsistencies between OSes to not be heavy enough.
-- I have considered a Tauri conversion, but the work required is much more than what I can (and honestly am willing to) handle at least at the moment
-
-<br><br>
-
-## Credits and Other info
+## Credits
 
 ### Acknowledgements
 
@@ -255,13 +227,4 @@ Congratulations!
 - This project uses [Harper](https://github.com/Automattic/harper) for the autocorrect feature.
 
 ### Other Informations
-
-- Where Your Data Is Stored on Disk
-
-  By default, Mundus creates a `mundus_data` folder:
-  - If the application directory is writable (e.g. portable app or selected user folder in Installer), it creates `mundus_data/` right inside the app folder.
-  - If installed in a protected directory (such as `C:\Program Files`, if selected "pc" in Installer), it safely uses:
-    - **Windows**: `%APPDATA%/mundus-app/mundus_data`
-    - **macOS**: `~/Library/Application Support/mundus-app/mundus_data`
-    - **Linux**: `~/.config/mundus-app/mundus_data`
 - This project was developed with the help of AI tools, mainly Google AI Studio and z.ai's GLM Agent chat

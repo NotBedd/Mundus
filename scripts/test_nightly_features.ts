@@ -71,6 +71,18 @@ console.log('\n== lintToSuggestion ==');
   check('remove-kind → empty replacement', removal !== null && removal.replacement === '', removal);
   check('non-first suggestions kept as alternatives', removal !== null && removal.alternatives[0] === 'the', removal);
   check('no suggestions → null', lintToSuggestion(lint(0, 2, 'x', 'Readability', [])) === null);
+
+  // v0.8.0: the popup cycles through up to THREE corrections with ←/→.
+  const three = lintToSuggestion(lint(0, 3, 'teh', 'Spelling', ['the', 'ten', 'then', 'tech']));
+  check('choices caps at 3', three !== null && three.choices.length === 3, three);
+  check('choices keep Harper precedence', three !== null && three.choices[0] === 'the' && three.choices[1] === 'ten' && three.choices[2] === 'then', three);
+  check('choices[0] mirrors replacement', three !== null && three.replacement === three.choices[0], three);
+  const removalChoices = lintToSuggestion(lint(4, 9, 'a a', 'Miscellaneous', [null, 'the']));
+  check('remove-kind mapped into choices as empty string', removalChoices !== null && removalChoices.choices[0] === '' && removalChoices.choices[1] === 'the', removalChoices);
+  const duped = lintToSuggestion(lint(0, 3, 'teh', 'Spelling', ['the', 'the', 'ten']));
+  check('duplicate candidates deduped', duped !== null && duped.choices.length === 2, duped);
+  const emptyOnly = lintToSuggestion(lint(0, 3, 'teh', 'Spelling', ['', '']));
+  check('all-empty non-remove candidates → null', emptyOnly === null, emptyOnly);
 }
 
 console.log('\n== adjustedRemoveSpan ==');

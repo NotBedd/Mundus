@@ -451,6 +451,42 @@ export const parseBackupFile = (file: File): Promise<ProjectBackupData> => {
   });
 };
 
+/**
+ * v0.8.0: the placeholder saveAutoBackupSnapshot swaps in for oversized base64
+ * image data URLs (localStorage quota guard above).
+ */
+export const LOCAL_IMAGE_PLACEHOLDER = '[Local Image]';
+
+/**
+ * v0.8.0: strips '[Local Image]' marker-valued fields from a snapshot item.
+ * Restoring a snapshot used to overwrite the LIVE avatar/image URLs with the
+ * dead marker string, visibly breaking character avatars and codex entry
+ * thumbnails (browser/Android snapshots only — desktop snapshots are raw).
+ */
+export const stripLocalImageMarkers = <T>(item: T): T => {
+  if (!item || typeof item !== 'object') return item;
+  const out: any = Array.isArray(item) ? [...(item as any)] : { ...(item as any) };
+  for (const k of Object.keys(out)) {
+    if (out[k] === LOCAL_IMAGE_PLACEHOLDER) delete out[k];
+  }
+  return out as T;
+};
+
+/**
+ * v0.8.0: merges sanitized snapshot items over the live ones. The snapshot
+ * version wins for every field EXCEPT '[Local Image]' markers, which are
+ * dropped so the current item's real image data survives the restore.
+ */
+export const mergeSnapshotItems = <T extends { id: string }>(incoming: T[] | undefined | null, current: T[]): T[] => {
+  const cleaned = (incoming || []).map((it) => stripLocalImageMarkers(it));
+  if (cleaned.length === 0) return [];
+  const byId = new Map<string, T>((current || []).map((it) => [it.id, it]));
+  return cleaned.map((it) => {
+    const existing = byId.get(it.id);
+    return existing ? ({ ...existing, ...it } as T) : it;
+  });
+};
+
 function sanitizeSnapshotData<T>(obj: T, seen = new WeakSet<object>(), depth = 0): T {
   // Hard guard against excessive recursion depth
   if (depth > 4) return (Array.isArray(obj) ? [] : typeof obj === 'object' && obj !== null ? {} : obj) as any;
