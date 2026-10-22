@@ -24,6 +24,7 @@
 <br>
 
 ## Mundus is divided into 6 "Modes": 4 for the active creation process, 2 for managing it:
+#### (If you don't want to read, hovering over every button shows what it does)
 (some of the pictures below are taken from the android version on a tablet to make them more readable in the smaller format) 
 
 <p> 
