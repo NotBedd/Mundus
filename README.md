@@ -18,6 +18,7 @@
 - [Features Overview](#atlas)
 - [Installing](#installing)
 - [Updating](#updating)
+- [Technical Details and Known limitations if you're interested](#technical-details-and-known-limitations)
 - [Credits, Licenses & Other Info](#credits)
 
 <br>
@@ -112,7 +113,9 @@ Family Tree Graph:
 - Can be filtered similarly to the characters 
 <img width="2944" height="1766" alt="CharactersFixed" src="https://github.com/user-attachments/assets/8ac37b79-34a2-40f8-868e-bb9c8e6bfbbe" />
 <img width="2944" height="1766" alt="FamilyTree" src="https://github.com/user-attachments/assets/e9ac429a-29ea-46a5-85fa-13b68a574001" />
-(If you look above, the "Missing" character has only the father assigned, so their line doesn't come from the union of the ones above) 
+
+(If you look above, the "Missing" character has only the father assigned, so their line doesn't come from the union of the ones above)
+(The family tree graph has some known and deliberate limitations, read more details [here](#multiple-partners-relationships-in-the-family-tree-graph))
 
 <br>
 
@@ -206,7 +209,17 @@ Congratulations!
 ### Android
 - Download and install the newer apk, it will ask to update, say yes (might also ask for permission again as its not signed)
 
-<br>
+<br><br>
+
+## Technical Details and Known limitations
+
+### The pagination system
+- Pagination has been historically hard to do on browsers, even modern ones still don't support proper pages to separate content, they can only handle a single text box called "ContentEditable", this means that using a webapp format like Mundus does for compatibility and consistency also prevents you from having a proper pagination system and pixel-perfect sentence breaks. Mundus tries to solve this with an engine that generates that dynamically splits the ContentEditable content based off size chunks and displays them onto virtual pages. After some work this approach ended up working relatively well, with the only major drawback still present and inherently unsolvable being the inability to break sentences or paragraphs off and split them between pages, this is why you may see inconsistencies in the "bottom margin" of your pages, if your paragraph is too big to fit within the remaining page space, the pagination engine will move all of it to the next page. This behavior can be easily accounted for by splitting paragraphs with periods without going to a new line and thus not breaking the reading flow significantly.
+
+### Multiple partners relationships in the family tree graph
+- The issue with family trees and individual with multiple partners is recognized by GEDCOM (the standard used for genealogy data) and while a newer system capable of handling it has been promised, nothing has arrived yet. Applications and websites have multiple ways of handling this, however none really looks satisfying to me, hence why I decided for know to treat this as a known limitation and leave it unaddressed, currently characters only display the union box with their first assigned partner, and children with other ones appear as ones with a single parent do
+
+<br><br>
 
 ## Credits
 
