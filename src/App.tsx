@@ -3041,6 +3041,22 @@ export default function App() {
     );
   };
 
+  // v0.8.3: generic folder update (book-order reindexing from Mundus View).
+  // Mirrors handleRenameFolder's persistence: whole-object local state +
+  // whole-object cloud save, so new fields ride along everywhere.
+  const handleUpdateFolder = (folderId: string, updates: Partial<Folder>) => {
+    setFolders((prev) =>
+      prev.map((f) => {
+        if (f.id === folderId) {
+          const updated = { ...f, ...updates, updatedAt: new Date().toISOString() };
+          if (isFirebaseConfigured) saveUserFolder(DEFAULT_AUTHOR_ID, updated);
+          return updated;
+        }
+        return f;
+      })
+    );
+  };
+
   const handleDeleteFolder = (folderId: string) => {
     // 1. Remove folder
     setFolders((prev) => prev.filter((f) => f.id !== folderId));
@@ -3657,6 +3673,10 @@ export default function App() {
         onDuplicateDocument={handleDuplicateDocument}
         onToggleFavorite={handleToggleFavorite}
         onBackupMundus={() => void handleExportMundusBackup()}
+        onUpdateFolder={handleUpdateFolder}
+        onUpdateProject={(updates) => {
+          if (activeMundusProject) handleUpdateMundusProject(activeMundusProject.id, updates);
+        }}
         isDarkMode={isDarkMode}
       />
 

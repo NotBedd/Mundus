@@ -601,11 +601,16 @@ input[type="number"]:focus::-webkit-inner-spin-button {
   padding-top: max(var(--safe-area-inset-top, 0px), var(--mundus-safe-top, 0px));
 }
 
-/* The Atlas utility bar is sticky; once the page scrolls it must stick
-   BELOW the status bar too, not at the raw viewport top. iPad/desktop:
-   both vars are unset → top: 0 → unchanged. */
-.mundus-atlas-shell > header.top-0 {
-  top: max(var(--safe-area-inset-top, 0px), var(--mundus-safe-top, 0px));
+/* v0.8.3: the shell is a viewport-height, non-scrolling flex column
+   (h-screen fallback; dvh where supported) whose CONTENT area scrolls —
+   the utility bar is a plain flex child and can never scroll away.
+   Before v0.8.3 the shell was min-h-screen + overflow-y-auto: it grew
+   with content, the DOCUMENT scrolled, and the sticky bar lost its
+   scrollport and scrolled away with the page on Android. */
+@supports (height: 100dvh) {
+  .mundus-atlas-shell {
+    height: 100dvh;
+  }
 }
 
 /* v0.8.2: on phones the sidebar is a fixed inset-y-0 drawer — fixed
