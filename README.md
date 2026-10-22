@@ -7,7 +7,9 @@
 
 <p>A free, open source story-making suite made for writers, offering all the features you need to bring your story to life and always keep track of it.</p>
 
-<p>Brainstorming your ideas by talking, writing down a draft, detailing a profile for each character, place everything on a map, all you need in one single app, synced between devices, no more jumping between programs and websites.</p>
+<p>Brainstorming your ideas by talking, writing down a draft, detailing a profile for each character, placing everything down on a map, all you need in one single app, synced between devices, no more jumping between programs and websites.</p>
+
+<p>Mundus works on Windows, Linux, MacOS, Android and iOS/iPadOS (PWA for iOS/iPadOS)</p>
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/notbed)
 
@@ -190,6 +192,11 @@ Congratulations!
 ### Android
 - Download and install the apk file (it might ask for permission as its not signed)
 
+### iPhone / iPad
+- Open mundus-ipados.netlify.app in Safari (untested on other browsers but should work)
+- Do share -> add to homescreen
+- Always launch the app from the homescreen icon
+
 ## Updating
 
 **WINDOWS**
@@ -209,6 +216,9 @@ Congratulations!
 
 ### Android
 - Download and install the newer apk, it will ask to update, say yes (might also ask for permission again as its not signed)
+
+### iPhone / iPad
+- Visit mundus-ipados.netlify.app again and just repeat the process from install, you can delete the old icon after creating the new one
 
 <br><br>
 
