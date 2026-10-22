@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import L from 'leaflet';
 import { 
   Upload, 
@@ -136,8 +137,31 @@ export const getIconComponent = (iconName: string) => {
 };
 
 // SVG Icon generator for Leaflet DivIcon - EXACT pixel-anchor geometry
+// v0.8.0: the icon chosen in the marker creation/edit menu is now drawn as
+// the actual marker glyph (centered on the pin's white disc). The default
+// 'MapPin' keeps the clean standard-pin look — any other icon replaces the
+// empty disc with the real lucide glyph so markers are visually distinct.
 const createMarkerIconHtml = (color: string, iconName: string, title: string) => {
   const safeTitle = title.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  let glyphSvg = '';
+  const effectiveIcon = (iconName || '').trim();
+  if (effectiveIcon && effectiveIcon !== 'MapPin') {
+    try {
+      const IconComp = getIconComponent(effectiveIcon);
+      // 14x14 glyph centered on the white disc (cx 16, cy 15, r 7):
+      // left = 16 - 7 = 9, top = 15 - 7 = 8.
+      glyphSvg = renderToStaticMarkup(
+        React.createElement(IconComp, {
+          size: 14,
+          strokeWidth: 2.8,
+          color: '#3f3f46',
+          style: { position: 'absolute', left: '9px', top: '8px', pointerEvents: 'none' },
+        })
+      );
+    } catch {
+      glyphSvg = ''; // glyph rendering is best-effort — the pin still shows
+    }
+  }
   return `
     <div class="mundus-map-marker-pin group relative" style="width: 32px; height: 38px; margin: 0; padding: 0; pointer-events: auto;">
       <svg width="32" height="38" viewBox="0 0 32 38" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5)); transform-origin: 16px 38px;" class="transition-transform duration-150 group-hover:scale-115">
@@ -147,6 +171,7 @@ const createMarkerIconHtml = (color: string, iconName: string, title: string) =>
       <div class="absolute -top-7 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-neutral-900/95 text-white text-[11px] font-medium px-2 py-0.5 rounded shadow-xl whitespace-nowrap z-[999] border border-neutral-700">
         ${safeTitle}
       </div>
+      ${glyphSvg}
     </div>
   `;
 };

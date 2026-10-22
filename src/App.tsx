@@ -49,6 +49,7 @@ import {
   saveUserCustomFont,
   uploadUserMapImage
 } from './lib/firebase';
+import { estimateStorageUsage } from './lib/storageEstimate';
 import { getCustomDictionary, saveCustomDictionary, getCharacterNameHighlightEnabled, setCharacterNameHighlightEnabled } from './lib/dictionaryManager';
 import { getDynamicTargetBarColorEnabled, setDynamicTargetBarColorEnabled, collectLocalTargetBarPrefs, stampLocalTargetBarPrefs, applyTargetBarPrefsToLocalStorage, mergeTargetBarPrefs } from './lib/targetProgress';
 import {
@@ -99,6 +100,7 @@ import { collectLocalFontPrefs, stampLocalFontPrefs, applyFontPrefsToLocalStorag
 import { 
   exportProjectBackupToFile, 
   parseBackupFile, 
+  mergeSnapshotItems,
   saveAutoBackupSnapshot, 
   getAutoBackupSnapshots, 
   exportMundusBackupToFile,
@@ -177,6 +179,19 @@ export default function App() {
   const handleToggleCharacterNameHighlight = (enabled: boolean) => {
     setCharacterNameHighlightState(enabled);
     setCharacterNameHighlightEnabled(enabled);
+  };
+
+  // v0.8.1: Harper suggestion popup layout (Editor & Scene Detection).
+  // false (default) = horizontal cycle with ←/→; true = all candidates stacked
+  // vertically, chosen with ↑/↓. Local-only preference, read by TextEditor
+  // through a prop so an open editor reacts immediately.
+  const [harperSuggestionsVertical, setHarperSuggestionsVertical] = useState<boolean>(() => {
+    try { return localStorage.getItem('mundus_harper_vertical') === 'true'; } catch { return false; }
+  });
+
+  const handleToggleHarperSuggestionsVertical = (enabled: boolean) => {
+    setHarperSuggestionsVertical(enabled);
+    try { localStorage.setItem('mundus_harper_vertical', String(enabled)); } catch { /* private mode */ }
   };
 
   // v0.7.84: dynamic writing-target bar coloring (Editor & Scene Detection).
@@ -1600,11 +1615,15 @@ export default function App() {
         setMundusProjects(snapProjects);
       }
     }
-    if (data.documents?.length > 0) setDocuments(data.documents);
+    if (data.documents?.length > 0) setDocuments(mergeSnapshotItems(data.documents, documents));
     if (data.folders?.length > 0) setFolders(data.folders);
     if (data.characters?.length > 0) {
-      charactersRef.current = data.characters;
-      setCharacters(data.characters);
+      // v0.8.0: merge instead of replace — browser/Android snapshots store
+      // '[Local Image]' markers instead of oversized base64 image URLs, and a
+      // plain replace used to clobber the live avatars with dead markers.
+      const mergedSnapChars = mergeSnapshotItems(data.characters, charactersRef.current);
+      charactersRef.current = mergedSnapChars;
+      setCharacters(mergedSnapChars);
     }
     if (data.timelineEvents?.length > 0) setTimelineEvents(data.timelineEvents);
     // v0.7.74: per-project calendars (snapshot restore)
@@ -1622,7 +1641,10 @@ export default function App() {
     const snapSectionsLegacy = normalizeCodexSections(data.codexSections);
     if (snapSectionsLegacy) setLegacyCodexSections(snapSectionsLegacy);
     if (data.storyLinks?.length > 0) setStoryLinks(data.storyLinks);
-    if (data.codexEntries?.length > 0) setCodexEntries(data.codexEntries);
+    if (data.codexEntries?.length > 0) {
+      // v0.8.0: same image-marker merge as characters (see above).
+      setCodexEntries((prev) => mergeSnapshotItems(data.codexEntries, prev));
+    }
 
     // v0.7.96: restore every world's Story Flow Graph layout so scenes keep
     // their arranged positions instead of piling into default spots.
@@ -2306,6 +2328,21 @@ export default function App() {
     if (!activeMundusId) return [];
     return folders.filter((f) => f.mundusId === activeMundusId);
   }, [folders, activeMundusId]);
+
+  // v0.8.1: REAL storage usage for the sidebar "Cloud storage" popup —
+  // per-Mundus numbers now measure actual data (documents, lore, map keys,
+  // snapshots, config maps) instead of a hardcoded 16 KB constant, and the
+  // app-wide total is their true sum. Recomputed only when project data
+  // actually changes; localStorage is scanned once per recompute.
+  const storageUsage = React.useMemo(() => estimateStorageUsage({
+    documents,
+    folders,
+    characters,
+    codexEntries,
+    timelineEvents,
+    storyLinks,
+    mundusIds: mundusProjects.map((p) => p.id),
+  }), [documents, folders, characters, codexEntries, timelineEvents, storyLinks, mundusProjects]);
 
   const currentMundusCharacters = React.useMemo(() => {
     if (!activeMundusId) return [];
@@ -3476,6 +3513,8 @@ export default function App() {
       onOpenFirebaseConfig={() => setIsFirebaseConfigModalOpen(true)}
       characterNameHighlightEnabled={characterNameHighlightEnabled}
       onToggleCharacterNameHighlight={handleToggleCharacterNameHighlight}
+      harperSuggestionsVertical={harperSuggestionsVertical}
+      onToggleHarperSuggestionsVertical={handleToggleHarperSuggestionsVertical}
       dynamicTargetBarColorEnabled={dynamicTargetBarColorEnabled}
       onToggleDynamicTargetBarColor={handleToggleDynamicTargetBarColor}
       backupDirPath={backupDirPath}
@@ -3628,6 +3667,7 @@ export default function App() {
           folders={currentMundusFolders}
           allDocuments={documents}
           allFolders={folders}
+          storageUsage={storageUsage}
           activeDocId={activeDocId}
           activeSection={activeSection}
           activeMundusProject={activeMundusProject}
@@ -3712,6 +3752,8 @@ export default function App() {
         onOpenFirebaseConfig={() => setIsFirebaseConfigModalOpen(true)}
         characterNameHighlightEnabled={characterNameHighlightEnabled}
         onToggleCharacterNameHighlight={handleToggleCharacterNameHighlight}
+        harperSuggestionsVertical={harperSuggestionsVertical}
+        onToggleHarperSuggestionsVertical={handleToggleHarperSuggestionsVertical}
         dynamicTargetBarColorEnabled={dynamicTargetBarColorEnabled}
         onToggleDynamicTargetBarColor={handleToggleDynamicTargetBarColor}
       />
@@ -3781,6 +3823,7 @@ export default function App() {
             activeMundusId={activeMundusId}
             onNavigateToMap={handleNavigateToMap}
             characterNameHighlightEnabled={characterNameHighlightEnabled}
+            harperSuggestionsVertical={harperSuggestionsVertical}
             dynamicTargetBarColorEnabled={dynamicTargetBarColorEnabled}
           />
         ) : activeSection === 'characters' ? (

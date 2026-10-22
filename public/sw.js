@@ -16,7 +16,7 @@
  *
  * NOTE: bumped alongside the app version stamp on every release.
  */
-const CACHE_NAME = 'mundus-v0.7.98';
+const CACHE_NAME = 'mundus-v0.8.2';
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 
 const PRECACHE_URLS = [

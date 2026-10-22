@@ -38,6 +38,7 @@ import {
 import type { CodexEntry, CodexSection, Character, NovelDocument, Folder } from '../../types';
 import { uploadImageToImgBB } from '../../lib/imgbb';
 import { fileToOptimizedDataUrl } from '../../lib/imageCompressor';
+import { getEntryDocumentMention } from '../../lib/sceneDetection';
 import { getMarkerForCodexEntry } from '../../utils/mapUtils';
 import { DEFAULT_CODEX_SECTIONS } from '../../lib/codexSectionsStore';
 
@@ -370,39 +371,22 @@ export const CodexMode: React.FC<CodexModeProps> = ({
   }, [characters, characterSearch]);
 
   // Detect which documents mention this entry (by title, subtitle, or tags)
+  // v0.8.0: whole-word matching via getEntryDocumentMention — the old raw
+  // substring `docText.includes(title)` flagged documents containing the title
+  // INSIDE other words ("xkylex" counted as a mention of "Kyle").
   const documentsWithMentionStatus = React.useMemo(() => {
-    const entryTitle = formTitle.trim().toLowerCase();
-    const entrySub = formSubtitle.trim().toLowerCase();
-    const entryTags = formTags.map((t) => t.toLowerCase());
+    const entryTitle = formTitle.trim();
+    const entrySub = formSubtitle.trim();
 
     return documents.map((doc) => {
       const isExplicitlyLinked = formLinkedDocumentIds.includes(doc.id);
-
-      let isMentioned = false;
-      let mentionReason = '';
-
-      if (entryTitle && entryTitle.length >= 2) {
-        const docText = (doc.plainText || '').toLowerCase();
-        const docTitle = (doc.title || '').toLowerCase();
-
-        if (docTitle.includes(entryTitle)) {
-          isMentioned = true;
-          mentionReason = 'In title';
-        } else if (docText.includes(entryTitle)) {
-          isMentioned = true;
-          mentionReason = 'Mentioned in text';
-        } else if (entrySub && entrySub.length >= 4 && docText.includes(entrySub)) {
-          isMentioned = true;
-          mentionReason = 'Subtitle match';
-        } else if (entryTags.some((t) => t.length >= 3 && docText.includes(t))) {
-          isMentioned = true;
-          mentionReason = 'Tag match';
-        }
-      }
+      const mentionReason = entryTitle.length >= 2
+        ? getEntryDocumentMention(doc.title, doc.plainText, entryTitle, entrySub, formTags)
+        : '';
 
       return {
         doc,
-        isMentioned,
+        isMentioned: mentionReason !== '',
         isExplicitlyLinked,
         mentionReason
       };

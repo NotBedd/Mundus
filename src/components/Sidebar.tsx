@@ -38,18 +38,22 @@ import {
 } from 'lucide-react';
 import { DoubleClickDeleteButton } from './DoubleClickDeleteButton';
 import { WindRoseLogo } from './WindRoseLogo';
+import { UpdateAvailableArrow } from './UpdateAvailableArrow';
 import { WritingModeIcon, CharacterModeIcon, LoreModeIcon, WorldModeIcon } from './ModeIcons';
 import type { NovelDocument, ActiveSection, Folder, MundusProject } from '../types';
+import type { StorageUsage } from '../lib/storageEstimate';
 import { isFirebaseConfigured } from '../lib/firebase';
 
 interface SidebarProps {
   documents: NovelDocument[];
   folders: Folder[];
-  // v0.7.98: every document/folder across ALL Mundus (used for the app-wide
-  // storage total in the sync tooltip). Falls back to the scoped props when
-  // omitted, so existing callers keep working.
+  // v0.8.1: REAL storage usage (per-Mundus bytes + shared + total) computed
+  // in App via estimateStorageUsage — feeds the sync tooltip's "This Mundus"
+  // / "All Mundus" rows. Replaces the v0.7.98 documents-only guess with the
+  // hardcoded 16 KB constant.
   allDocuments?: NovelDocument[];
   allFolders?: Folder[];
+  storageUsage: StorageUsage;
   activeDocId: string;
   activeSection: ActiveSection;
   accentColor?: string;
@@ -80,6 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   folders,
   allDocuments,
   allFolders,
+  storageUsage,
   activeDocId,
   activeSection,
   accentColor = '#8b5cf6',
@@ -220,42 +225,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
     window.addEventListener('dragstart', onDragStart);
   };
 
-  // Calculate approximate storage usage — v0.7.98: BOTH scopes, because users
-  // care about two different numbers against the Firebase quota: what the
-  // currently open Mundus uses, and what all Mundus combined use (every
-  // project lives in the same Firestore namespace / localStorage key, so the
-  // total is what actually pushes toward the 1 GB free tier).
-  const { usedStorageDisplay, totalStorageDisplay, storagePercentDisplay, storageBarPercent } = useMemo(() => {
+  // Calculate approximate storage usage — v0.8.1: REAL measurement from
+  // estimateStorageUsage (App.tsx). The v0.7.98 guess added a hardcoded
+  // 16 KB "base metadata overhead" to every scope, so an empty Mundus
+  // reported ~16 KB and the scopes could never reconcile (16.6 + 16.2 ≠
+  // 16.8). Now: "This Mundus" = actual bytes of this project's records and
+  // per-project keys; "All Mundus" = the true sum across projects + shared
+  // keys, so the two rows are consistent by construction.
+  // v0.8.2: the gap the user could not explain — two empty Mundus showed
+  // "1 KB" each while the total said "36.5 KB" — is the SHARED bucket:
+  // app-wide keys that belong to no single Mundus but DO consume real
+  // quota (local auto-backup snapshots, settings, custom dictionary,
+  // projects list, sync queues…). The tooltip now shows that bucket
+  // explicitly so the rows add up visibly.
+  const { usedStorageDisplay, totalStorageDisplay, sharedStorageDisplay, storagePercentDisplay, storageBarPercent } = useMemo(() => {
     const formatBytes = (bytes: number): string => {
       if (bytes < 1024 * 1024) {
         return `${(bytes / 1024).toFixed(1)} KB`;
       }
       return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
     };
-    const calcBytes = (docs: NovelDocument[], folds: Folder[]): number => {
-      let bytes = 0;
-      docs.forEach((d) => {
-        bytes += (d.content?.length || 0) + (d.plainText?.length || 0) + (d.title?.length || 0) + 180;
-      });
-      folds.forEach((f) => {
-        bytes += (f.name?.length || 0) + 90;
-      });
-      // Base metadata overhead (settings, dictionary, timeline, characters)
-      bytes += 1024 * 16;
-      return bytes;
-    };
 
-    const projectBytes = calcBytes(documents, folders);
-    const totalBytes = calcBytes(allDocuments ?? documents, allFolders ?? folders);
+    const projectBytes = storageUsage.perProject[activeMundusProject?.id || 'mundus-prima'] ?? 0;
+    const totalBytes = storageUsage.totalBytes;
     // Percent + bar track the app-wide total (quota-relevant number).
     const percent = (totalBytes / (1024 * 1024 * 1024)) * 100;
     return {
       usedStorageDisplay: formatBytes(projectBytes),
       totalStorageDisplay: formatBytes(totalBytes),
+      sharedStorageDisplay: formatBytes(storageUsage.sharedBytes),
       storagePercentDisplay: percent < 0.01 ? '< 0.01%' : `${percent.toFixed(2)}%`,
       storageBarPercent: Math.min(100, Math.max(1.5, percent)),
     };
-  }, [documents, folders, allDocuments, allFolders]);
+  }, [storageUsage, activeMundusProject?.id]);
 
   // If Firebase is not configured, disable syncing animations and force offline status
   const effectiveSyncStatus: 'synced' | 'saving' | 'offline' | 'error' = !isFirebaseConfigured ? 'offline' : syncStatus;
@@ -486,6 +488,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <span className="text-[10px] font-mono px-1.5 py-0.5 rounded font-semibold bg-accent/20 text-accent border border-accent/30 shrink-0">
                       {APP_VERSION}
                     </span>
+                    {/* v0.8.1: green arrow when a newer release exists on GitHub */}
+                    <UpdateAvailableArrow />
                   </div>
                   <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate tracking-tight font-medium mt-0.5">
                     {activeMundusProject?.name || 'Prima'}
@@ -715,15 +719,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 ? 'border-2 border-accent text-accent font-semibold bg-transparent shadow-2xs'
                 : isDarkMode ? 'text-neutral-400 hover:bg-neutral-850 hover:text-neutral-200' : 'text-neutral-600 hover:bg-neutral-200/50 hover:text-neutral-900'
             }`}
-            title="Map (Beta)"
+            title="Map"
           >
             <WorldModeIcon className="w-4 h-4 shrink-0" />
             {isExpanded && (
               <div className="flex items-center justify-between flex-1 min-w-0">
                 <span className="truncate">Map</span>
-                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">
-                  BETA
-                </span>
               </div>
             )}
           </button>
@@ -1336,21 +1337,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="absolute bottom-full left-0 mb-2 w-52 p-3 rounded-xl border shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 bg-white dark:bg-[#141414] border-neutral-200 dark:border-neutral-800 pointer-events-none">
                   {isFirebaseConfigured ? (
                     <>
-                      <div className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 mb-1.5 flex items-center justify-between">
-                        <span>Cloud Storage</span>
-                        <span className="text-emerald-500 font-mono text-[11px]">{storagePercentDisplay}</span>
+                      {/* v0.8.0 layout: header row carries the quota %, the bar
+                          sits in the middle, and both scope rows are single
+                          label-left / value-right lines. */}
+                      <div className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 mb-1.5 flex items-center justify-between gap-3">
+                        <span className="shrink-0">Cloud Storage</span>
+                        <span className="text-emerald-500 font-mono text-[11px] whitespace-nowrap">{storagePercentDisplay} of 1GB</span>
                       </div>
                       <div className="w-full h-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden mb-2">
                         <div className="h-full bg-emerald-500" style={{ width: `${storageBarPercent}%` }} />
                       </div>
-                      {/* v0.7.98: show both scopes — current Mundus and app-wide total */}
-                      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400">
-                        <span>This Mundus: {usedStorageDisplay}</span>
+                      <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-neutral-600 dark:text-neutral-400">
+                        <span className="shrink-0">This Mundus</span>
+                        <span className="whitespace-nowrap">{usedStorageDisplay}</span>
                       </div>
-                      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
-                        <span>All Mundus: {totalStorageDisplay}</span>
-                        <span>Quota: 1.0 GB</span>
+                      <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
+                        <span className="shrink-0">All Mundus</span>
+                        <span className="whitespace-nowrap">{totalStorageDisplay}</span>
                       </div>
+                      <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
+                        <span className="shrink-0">Shared app data</span>
+                        <span className="whitespace-nowrap">{sharedStorageDisplay}</span>
+                      </div>
+                      <p className="text-[9px] leading-snug text-neutral-400 dark:text-neutral-600 mt-1.5">
+                        Shared = settings, local auto-backups, dictionary &amp; sync queue — not tied to one Mundus.
+                      </p>
                     </>
                   ) : (
                     <>
@@ -1360,12 +1371,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mb-2 leading-relaxed">
                         Firebase is not configured. All changes are saved locally to your device.
                       </p>
-                      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400">
-                        <span>This Mundus: {usedStorageDisplay}</span>
+                      <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-neutral-600 dark:text-neutral-400">
+                        <span className="shrink-0">This Mundus</span>
+                        <span className="whitespace-nowrap">{usedStorageDisplay}</span>
                       </div>
-                      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
-                        <span>All Mundus: {totalStorageDisplay}</span>
+                      <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
+                        <span className="shrink-0">All Mundus</span>
+                        <span className="whitespace-nowrap">{totalStorageDisplay}</span>
                       </div>
+                      <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
+                        <span className="shrink-0">Shared app data</span>
+                        <span className="whitespace-nowrap">{sharedStorageDisplay}</span>
+                      </div>
+                      <p className="text-[9px] leading-snug text-neutral-400 dark:text-neutral-600 mt-1.5">
+                        Shared = settings, local auto-backups, dictionary &amp; sync queue — not tied to one Mundus.
+                      </p>
                     </>
                   )}
                 </div>
@@ -1427,21 +1447,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   {isFirebaseConfigured ? (
                     <>
-                      <div className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 mb-1.5 flex items-center justify-between">
-                        <span>Cloud Storage</span>
-                        <span className="text-emerald-500 font-mono text-[11px]">{storagePercentDisplay}</span>
+                      {/* v0.8.0 layout (collapsed portal variant) — same single-line
+                          rows as the expanded tooltip. */}
+                      <div className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 mb-1.5 flex items-center justify-between gap-3">
+                        <span className="shrink-0">Cloud Storage</span>
+                        <span className="text-emerald-500 font-mono text-[11px] whitespace-nowrap">{storagePercentDisplay} of 1GB</span>
                       </div>
                       <div className="w-full h-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden mb-2">
                         <div className="h-full bg-emerald-500" style={{ width: `${storageBarPercent}%` }} />
                       </div>
-                      {/* v0.7.98: show both scopes — current Mundus and app-wide total */}
-                      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400">
-                        <span>This Mundus: {usedStorageDisplay}</span>
+                      <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-neutral-600 dark:text-neutral-400">
+                        <span className="shrink-0">This Mundus</span>
+                        <span className="whitespace-nowrap">{usedStorageDisplay}</span>
                       </div>
-                      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
-                        <span>All Mundus: {totalStorageDisplay}</span>
-                        <span>Quota: 1.0 GB</span>
+                      <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
+                        <span className="shrink-0">All Mundus</span>
+                        <span className="whitespace-nowrap">{totalStorageDisplay}</span>
                       </div>
+                      <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
+                        <span className="shrink-0">Shared app data</span>
+                        <span className="whitespace-nowrap">{sharedStorageDisplay}</span>
+                      </div>
+                      <p className="text-[9px] leading-snug text-neutral-400 dark:text-neutral-600 mt-1.5">
+                        Shared = settings, local auto-backups, dictionary &amp; sync queue — not tied to one Mundus.
+                      </p>
                     </>
                   ) : (
                     <>
@@ -1451,12 +1480,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mb-2 leading-relaxed">
                         Firebase is not configured. All changes are saved locally to your device.
                       </p>
-                      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400">
-                        <span>This Mundus: {usedStorageDisplay}</span>
+                      <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-neutral-600 dark:text-neutral-400">
+                        <span className="shrink-0">This Mundus</span>
+                        <span className="whitespace-nowrap">{usedStorageDisplay}</span>
                       </div>
-                      <div className="flex items-center justify-between text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
-                        <span>All Mundus: {totalStorageDisplay}</span>
+                      <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
+                        <span className="shrink-0">All Mundus</span>
+                        <span className="whitespace-nowrap">{totalStorageDisplay}</span>
                       </div>
+                      <div className="flex items-center justify-between gap-3 text-[10px] font-mono text-neutral-600 dark:text-neutral-400 mt-0.5">
+                        <span className="shrink-0">Shared app data</span>
+                        <span className="whitespace-nowrap">{sharedStorageDisplay}</span>
+                      </div>
+                      <p className="text-[9px] leading-snug text-neutral-400 dark:text-neutral-600 mt-1.5">
+                        Shared = settings, local auto-backups, dictionary &amp; sync queue — not tied to one Mundus.
+                      </p>
                     </>
                   )}
                 </div>,

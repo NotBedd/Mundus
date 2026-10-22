@@ -43,6 +43,8 @@ interface SettingsModalProps {
   onClearSnapshots?: () => void;
   onOpenFirebaseConfig?: () => void;
   characterNameHighlightEnabled?: boolean;
+  harperSuggestionsVertical?: boolean;
+  onToggleHarperSuggestionsVertical?: (enabled: boolean) => void;
   onToggleCharacterNameHighlight?: (enabled: boolean) => void;
   dynamicTargetBarColorEnabled?: boolean;
   onToggleDynamicTargetBarColor?: (enabled: boolean) => void;
@@ -162,6 +164,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClearSnapshots,
   onOpenFirebaseConfig,
   characterNameHighlightEnabled = false,
+  harperSuggestionsVertical = false,
+  onToggleHarperSuggestionsVertical,
   onToggleCharacterNameHighlight,
   dynamicTargetBarColorEnabled = true,
   onToggleDynamicTargetBarColor
@@ -437,6 +441,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span
                     className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
                       characterNameHighlightEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
+            {/* v0.8.1: Harper suggestion popup layout */}
+            <div className={`p-4 rounded-xl border transition-all ${
+              isDarkMode ? 'bg-neutral-900/60 border-neutral-800' : 'bg-neutral-50/80 border-neutral-200'
+            }`}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <label htmlFor="toggle-harper-vertical" className="text-xs font-semibold block cursor-pointer select-none">
+                    Show All Grammar Suggestions in a List
+                  </label>
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                    Changes how the inline grammar/spelling popup presents its corrections. Off (default): one suggestion at a time, cycle with the ← → arrow keys. On: all three candidates are stacked vertically at once — pick between them with the ↑ ↓ arrow keys, then press Tab (or click) to apply the highlighted one.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  id="toggle-harper-vertical"
+                  role="switch"
+                  aria-checked={harperSuggestionsVertical}
+                  onClick={() => onToggleHarperSuggestionsVertical?.(!harperSuggestionsVertical)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 ${
+                    harperSuggestionsVertical
+                      ? 'bg-purple-600'
+                      : isDarkMode
+                      ? 'bg-neutral-700'
+                      : 'bg-neutral-300'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      harperSuggestionsVertical ? 'translate-x-5' : 'translate-x-0'
                     }`}
                   />
                 </button>

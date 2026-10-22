@@ -135,8 +135,10 @@ export const VisualImageOverlay: React.FC<VisualImageOverlayProps> = ({
   // Click outside listener to deselect image
   useEffect(() => {
     const handleGlobalClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('.visual-image-item')) {
+      // v0.8.1: guard non-Element targets (document etc.) — synthetic and
+      // edge-case events otherwise crash on the missing .closest().
+      const target = e.target as HTMLElement | null;
+      if (!target || typeof target.closest !== 'function' || !target.closest('.visual-image-item')) {
         setSelectedId(null);
       }
     };

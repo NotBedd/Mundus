@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
+import android.view.WindowInsets;
 import android.webkit.JavascriptInterface;
 
 import com.getcapacitor.BridgeActivity;
@@ -40,7 +41,95 @@ public class MainActivity extends BridgeActivity {
         // WebView is available here. Guard anyway for exotic failure modes.
         if (bridge != null && bridge.getWebView() != null) {
             bridge.getWebView().addJavascriptInterface(new MundusFileBridge(this), "MundusNative");
+            applySafeAreaInsets();
         }
+    }
+
+    /**
+     * v0.8.1: keep app content below the Android status bar.
+     *
+     * The app draws edge-to-edge (viewport-fit=cover, and Android 15+ forces
+     * edge-to-edge anyway), which the WebView on Android does not translate
+     * into the CSS env(safe-area-inset-top) variable — content rendered
+     * behind the status bar. The status bar area itself is still great for
+     * the bottom edge (home indicator), so ONLY the top inset is bridged:
+     * this listener measures the real top inset (status bar + display
+     * cutout) and publishes it to the page as the CSS custom property
+     * '--mundus-safe-top'. index.css pads the app shell with
+     * max(env(safe-area-inset-top), var(--mundus-safe-top, 0px)), so iPad
+     * PWA behavior is unchanged and Android now gets the same protection.
+     *
+     * v0.8.2 FIX: v0.8.1 published the inset in RAW DEVICE PIXELS, but CSS
+     * px inside the WebView are DENSITY-INDEPENDENT px. On a 3.5x-density
+     * phone the status bar (~132 device px) was published as "132px" CSS =
+     * 462 device px of padding — the huge blank band that compressed every
+     * mode UI. The inset is now divided by the display density before it is
+     * published, so the padding equals exactly one status bar. The measured
+     * value is also remembered: the delayed re-publishes reuse it instead of
+     * the coarse status_bar_height resource (which could double-pad builds
+     * where the system already handles the inset natively).
+     */
+    private void applySafeAreaInsets() {
+        final android.webkit.WebView webView = bridge.getWebView();
+        final float density = getResources().getDisplayMetrics().density;
+        // Last value measured by the insets listener, in CSS px. Integer.MIN_VALUE
+        // = "the listener has not run yet".
+        final int[] lastMeasuredCss = {Integer.MIN_VALUE};
+        webView.setOnApplyWindowInsetsListener((v, insets) -> {
+            int top = 0;
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    android.graphics.Insets bars = insets.getInsets(
+                        WindowInsets.Type.statusBars() | WindowInsets.Type.displayCutout());
+                    top = bars.top;
+                } else {
+                    top = insets.getSystemWindowInsetTop();
+                }
+            } catch (Exception ignored) {
+                top = 0;
+            }
+            final int topCss = deviceToCssPx(top, density);
+            lastMeasuredCss[0] = topCss;
+            publishSafeTop(webView, topCss);
+            return insets; // never consume — Capacitor's own dispatch continues
+        });
+        // Early fallback: publish the resource-based status bar height right
+        // away (the insets listener refines it as soon as the system dispatches).
+        int fallback = 0;
+        try {
+            int resId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+            if (resId > 0) fallback = getResources().getDimensionPixelSize(resId);
+        } catch (Exception ignored) {
+            fallback = 0;
+        }
+        final int initialCss = deviceToCssPx(fallback, density);
+        publishSafeTop(webView, initialCss);
+        // Re-publish shortly after the first page commit — the very first
+        // evaluateJavascript can race the document's creation. Prefer the
+        // value the insets listener actually measured; only fall back to the
+        // resource guess when the listener has not run at all.
+        webView.postDelayed(() -> publishSafeTop(webView, lastMeasuredCss[0] != Integer.MIN_VALUE ? lastMeasuredCss[0] : initialCss), 600);
+        webView.postDelayed(() -> publishSafeTop(webView, lastMeasuredCss[0] != Integer.MIN_VALUE ? lastMeasuredCss[0] : initialCss), 1800);
+    }
+
+    /** Converts a device-pixel inset into WebView CSS pixels (density-independent). */
+    private static int deviceToCssPx(int devicePx, float density) {
+        if (devicePx <= 0 || density <= 0f) return 0;
+        return Math.max(0, Math.round(devicePx / density));
+    }
+
+    private void publishSafeTop(final android.webkit.WebView webView, final int topPx) {
+        if (webView == null) return;
+        webView.post(() -> {
+            try {
+                webView.evaluateJavascript(
+                    "(function(){try{document.documentElement&&document.documentElement.style.setProperty('--mundus-safe-top','"
+                        + topPx + "px');}catch(e){}})();",
+                    null);
+            } catch (Exception ignored) {
+                // WebView not ready — the insets listener will retry.
+            }
+        });
     }
 
     @Override

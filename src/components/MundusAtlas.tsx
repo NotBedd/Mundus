@@ -22,6 +22,7 @@ import {
 import { APP_VERSION } from '../constants';
 import mundusLogoImg from '../assets/logo-transparent.png';
 import { DoubleClickDeleteButton } from './DoubleClickDeleteButton';
+import { UpdateAvailableArrow } from './UpdateAvailableArrow';
 import { WindRoseLogo } from './WindRoseLogo';
 import type { 
   MundusProject, 
@@ -159,7 +160,7 @@ export const MundusAtlas: React.FC<MundusAtlasProps> = ({
   };
 
   return (
-    <div className={`min-h-screen w-full flex flex-col transition-colors overflow-y-auto ${
+    <div className={`mundus-atlas-shell min-h-screen w-full flex flex-col transition-colors overflow-y-auto ${
       isDarkMode ? 'bg-[#0a0a0a] text-neutral-100' : 'bg-[#f8f8f8] text-neutral-900'
     }`}>
       {/* Top Utility Bar */}
@@ -182,6 +183,8 @@ export const MundusAtlas: React.FC<MundusAtlasProps> = ({
           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded font-semibold bg-accent/20 text-accent border border-accent/30 shrink-0">
             {APP_VERSION}
           </span>
+          {/* v0.8.1: green arrow when a newer release exists on GitHub */}
+          <UpdateAvailableArrow />
         </div>
 
         <div className="flex items-center gap-3">

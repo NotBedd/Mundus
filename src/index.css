@@ -568,18 +568,64 @@ input[type="number"]:focus::-webkit-inner-spin-button {
 }
 
 /* ============================================================
-   PWA safe-area support (v0.7.96-iPad)
+   PWA safe-area support (v0.7.96-iPad) + Android (v0.8.1/v0.8.2)
    Standalone full-bleed mode on iPad: the shell's own background
    still paints edge-to-edge, while interactive content is padded
    away from the status bar (notch) and home indicator.
-   env() evaluates to 0px on desktop browsers, Electron and
-   non-cutout Android, so this is a no-op everywhere else.
+   v0.8.1 ANDROID: the Android WebView draws edge-to-edge but never
+   populates env(safe-area-inset-top), so MainActivity measures the
+   real top inset and publishes it as --mundus-safe-top (v0.8.2:
+   density-corrected CSS px). Capacitor's own SystemBars plugin also
+   injects --safe-area-inset-top on native builds — included in the
+   max() chain as a second source, so whichever mechanism reports
+   first still yields exactly one status bar of padding.
    ============================================================ */
 #app-root {
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: max(
+    env(safe-area-inset-top, 0px),
+    var(--safe-area-inset-top, 0px),
+    var(--mundus-safe-top, 0px)
+  );
   padding-right: env(safe-area-inset-right, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   padding-left: env(safe-area-inset-left, 0px);
+}
+
+/* v0.8.2: the Mundus Atlas renders OUTSIDE #app-root (it replaces the
+   whole app shell when no world is open), so the rule above never
+   reached it — its header sat behind the status bar on Android.
+   Var-only sources (no env()) keep the iPad PWA pixel-identical:
+   iOS never sets --mundus-safe-top, and --safe-area-inset-top only
+   exists inside the Capacitor native shell. */
+.mundus-atlas-shell {
+  padding-top: max(var(--safe-area-inset-top, 0px), var(--mundus-safe-top, 0px));
+}
+
+/* The Atlas utility bar is sticky; once the page scrolls it must stick
+   BELOW the status bar too, not at the raw viewport top. iPad/desktop:
+   both vars are unset → top: 0 → unchanged. */
+.mundus-atlas-shell > header.top-0 {
+  top: max(var(--safe-area-inset-top, 0px), var(--mundus-safe-top, 0px));
+}
+
+/* v0.8.2: on phones the sidebar is a fixed inset-y-0 drawer — fixed
+   positioning is viewport-relative, so #app-root's padding cannot
+   reach it either. Pad it on the mobile breakpoint only; tablet/desktop
+   (md+) use the in-flow sidebar inside the already-padded #app-root. */
+@media (max-width: 767px) {
+  #app-sidebar {
+    padding-top: max(var(--safe-area-inset-top, 0px), var(--mundus-safe-top, 0px));
+  }
+}
+
+/* v0.8.2: the Mundus View backstage is a fixed inset-0 overlay — same
+   viewport-relative exception as the drawer. Pad the overlay and drop
+   its floating nav buttons below the status bar. */
+#start-menu-overlay {
+  padding-top: max(var(--safe-area-inset-top, 0px), var(--mundus-safe-top, 0px));
+}
+#start-menu-overlay > div.fixed.top-4 {
+  top: calc(1rem + max(var(--safe-area-inset-top, 0px), var(--mundus-safe-top, 0px)));
 }
 
 /* Track the visible viewport inside in-browser Safari (toolbars

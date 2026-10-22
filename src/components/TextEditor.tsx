@@ -59,6 +59,7 @@ import { exportToMarkdown, exportToPdf, exportToDocx, exportToMundus, exportToHt
 import { importDocumentFromFile, type SupportedImportFormat } from '../lib/importUtils';
 import { CharacterCardDrawer } from './characters/CharacterCardDrawer';
 import { InThisSceneDrawer } from './lore/InThisSceneDrawer';
+import { detectInSceneEntryIds, detectInSceneCharacterIds } from '../lib/sceneDetection';
 import { WritingTargetModal } from './WritingTargetModal';
 import { SpellCheckModal } from './SpellCheckModal';
 import { SnapshotsModal } from './SnapshotsModal';
@@ -134,6 +135,8 @@ interface TextEditorProps {
   onNavigateToMap?: (codexId?: string, markerId?: string) => void;
   pageFormat?: PageFormat;
   characterNameHighlightEnabled?: boolean;
+  /** v0.8.1: render all Harper candidates in a vertical list (↑/↓ to pick). */
+  harperSuggestionsVertical?: boolean;
   dynamicTargetBarColorEnabled?: boolean;
 }
 
@@ -289,6 +292,19 @@ const cleanHtmlForSaving = (rawHtml: string): string => {
     }
   });
 
+  // v0.8.1: caret anchors are live-DOM helpers for the one-shot highlighter
+  // (they keep the caret OUTSIDE a freshly painted highlight) — never persist
+  // them. Real text typed into an anchor is kept; the zero-width space is dropped.
+  tempDiv.querySelectorAll('span[data-mundus-caret-anchor]').forEach((el) => {
+    const parent = el.parentNode;
+    if (!parent) return;
+    Array.from(el.childNodes).forEach((child) => {
+      if (child.nodeType === Node.TEXT_NODE && (child.textContent || '').replace(/\u200B/g, '') === '') return;
+      parent.insertBefore(child, el);
+    });
+    parent.removeChild(el);
+  });
+
   // CRITICAL: Strip any legacy or artificial page break spacer divs so they are NEVER saved to the database
   tempDiv.querySelectorAll('.mundus-page-break:not([data-manual-page-break])').forEach((el) => {
     el.remove();
@@ -304,6 +320,63 @@ const cleanHtmlForSaving = (rawHtml: string): string => {
   });
   
   return tempDiv.innerHTML;
+};
+
+/**
+ * v0.8.1: removes expired caret anchors left by the one-shot highlighter.
+ *
+ * Anchors are contenteditable=false zero-width spans parked between the
+ * freshly painted highlight and the text after it (see handleToggleHighlight).
+ * They must survive while the caret still rests right after them — that is
+ * what keeps Chromium's insertion canonicalization from typing INTO the
+ * highlight — and be removed once the caret moved on (mid-text or elsewhere).
+ */
+const cleanupCaretAnchors = (editor: HTMLElement): void => {
+  let focusContainer: Node | null = null;
+  let focusOffset = 0;
+  try {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      focusContainer = sel.getRangeAt(0).startContainer;
+      focusOffset = sel.getRangeAt(0).startOffset;
+    }
+  } catch { focusContainer = null; }
+
+  const anchors = editor.querySelectorAll('span[data-mundus-caret-anchor]');
+  anchors.forEach((anchor) => {
+    const parent = anchor.parentNode;
+    if (!parent) return;
+
+    // Keep the anchor while the caret is still in its protection zone:
+    // immediately after it (either as [parent, index-after-anchor] — the
+    // position setStartAfter produces — or offset 0 of the following text node).
+    let keep = false;
+    if (focusContainer) {
+      if (focusContainer === anchor || anchor.contains(focusContainer)) {
+        keep = true;
+      } else if (focusContainer === parent && focusOffset > 0) {
+        const prev = parent.childNodes[focusOffset - 1];
+        if (prev === anchor) keep = true;
+      } else if (focusContainer.nodeType === Node.TEXT_NODE && focusContainer.previousSibling === anchor) {
+        keep = focusOffset === 0;
+      }
+    }
+    if (keep) return;
+
+    const text = anchor.textContent || '';
+    if (text.replace(/\u200B/g, '') === '') {
+      parent.removeChild(anchor);
+    } else {
+      // Defensive: an anchor should never hold real text (it is
+      // contenteditable=false) — unwrap if one ever does.
+      Array.from(anchor.childNodes).forEach((child) => {
+        if (child.nodeType === Node.TEXT_NODE && (child.textContent || '').replace(/\u200B/g, '') === '') return;
+        parent.insertBefore(child, anchor);
+      });
+      parent.removeChild(anchor);
+      if (parent.normalize) parent.normalize();
+    }
+  });
 };
 
 const sanitizeContentForLoading = (rawHtml: string): string => {
@@ -375,6 +448,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   onNavigateToMap,
   pageFormat,
   characterNameHighlightEnabled = false,
+  harperSuggestionsVertical = false,
   dynamicTargetBarColorEnabled = true,
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -919,6 +993,10 @@ export const TextEditor: React.FC<TextEditorProps> = ({
     originalWord: string;
     replacement: string;
     alternatives: string[];
+    // v0.8.0: up to 3 selectable candidates. `replacement` always mirrors
+    // choices[choiceIndex] so Tab/click acceptance logic stays untouched.
+    choices: string[];
+    choiceIndex: number;
     rectTop: number;
     rectBottom: number;
     rectLeft: number;
@@ -1097,6 +1175,11 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   }, [findMatchingCodex]);
 
   // Count of Codex entities & characters detected in current active document (debounced to avoid typing lag)
+  // v0.8.1 FIX: this badge used its OWN substring matching (plain
+  // `.includes()`), so an entry named "tullius" lit the button from
+  // "atulliusx" while the drawer itself (whole-word detection) showed
+  // nothing. The count now runs the EXACT same shared whole-word helpers the
+  // drawer uses — button badge and drawer are always in agreement.
   const [detectedSceneCount, setDetectedSceneCount] = useState<number>(0);
 
   useEffect(() => {
@@ -1105,23 +1188,9 @@ export const TextEditor: React.FC<TextEditorProps> = ({
       return;
     }
     const timer = setTimeout(() => {
-      const lower = document.plainText.toLowerCase();
-      let count = 0;
-      for (const entry of codexEntries) {
-        if (!entry.title) continue;
-        const titleLower = entry.title.toLowerCase().trim();
-        if (lower.includes(titleLower) || titleLower.split(/\s+/).some((w) => w.length >= 4 && lower.includes(w))) {
-          count++;
-        }
-      }
-      for (const char of characters) {
-        if (!char.name) continue;
-        const charLower = char.name.toLowerCase().trim();
-        if (lower.includes(charLower) || charLower.split(/\s+/).some((w) => w.length >= 3 && lower.includes(w))) {
-          count++;
-        }
-      }
-      setDetectedSceneCount(count);
+      const entryIds = detectInSceneEntryIds(codexEntries, document.plainText);
+      const charIds = detectInSceneCharacterIds(characters, document.plainText);
+      setDetectedSceneCount(entryIds.size + charIds.size);
     }, 600);
 
     return () => clearTimeout(timer);
@@ -2108,6 +2177,8 @@ export const TextEditor: React.FC<TextEditorProps> = ({
             originalWord: harperSuggestion.originalWord,
             replacement: harperSuggestion.replacement,
             alternatives: harperSuggestion.alternatives,
+            choices: harperSuggestion.choices,
+            choiceIndex: 0,
             lintKind: harperSuggestion.lintKind,
             grammarMessage: harperSuggestion.grammarMessage,
             rectTop: rectAtCall.top,
@@ -2131,6 +2202,8 @@ export const TextEditor: React.FC<TextEditorProps> = ({
         originalWord: cw.cleaned,
         replacement: candidates[0],
         alternatives: candidates.slice(1, 3),
+        choices: candidates.slice(0, 3),
+        choiceIndex: 0,
         rectTop: rectAtCall.top,
         rectBottom: rectAtCall.bottom,
         rectLeft: rectAtCall.left,
@@ -2148,6 +2221,16 @@ export const TextEditor: React.FC<TextEditorProps> = ({
       checkCaretWordForSuggestion();
     }, 350);
   }, [spellCheckEnabled, checkCaretWordForSuggestion]);
+
+  // v0.8.0: cycle through up to 3 candidate corrections while the popup is
+  // open (←/→ keys or the popup's chevrons). The selected candidate is written
+  // back into `replacement` so Tab / click acceptance needs no changes.
+  const cycleInlineSuggestionChoice = useCallback((dir: 1 | -1) => {
+    const s = inlineSuggestionRef.current;
+    if (!s || !s.choices || s.choices.length < 2) return;
+    const next = (s.choiceIndex + dir + s.choices.length) % s.choices.length;
+    setInlineSuggestion({ ...s, choiceIndex: next, replacement: s.choices[next] });
+  }, []);
 
   // Tab acceptance: splice the replacement into the exact text node the popup
   // was anchored to, put the caret after the corrected word, refresh stats.
@@ -2386,6 +2469,10 @@ export const TextEditor: React.FC<TextEditorProps> = ({
 
   // Calculate counts and propagate updates (Debounced for zero typing latency)
   const handleEditorInput = useCallback(() => {
+    // v0.8.1: sweep expired one-shot highlighter caret anchors (the anchor the
+    // caret currently lives in is spared — it is cleaned up once the caret moves).
+    if (editorRef.current) cleanupCaretAnchors(editorRef.current);
+
     // Inline autocorrect lifecycle: any input dismisses the current popup and
     // schedules a fresh check for the word that will have finished typing.
     setInlineSuggestion(null);
@@ -2402,6 +2489,10 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   }, [flushInput, updatePageStats, scheduleInlineSuggestionCheck]);
 
   const formattingUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // v0.8.0: set right after a ONE-SHOT highlight application (selection + color).
+  // The next background sync consumes it so the just-painted text under the
+  // caret does not re-latch the active highlight (typing must stay unhighlighted).
+  const highlightOneShotSyncGuardRef = useRef(false);
 
   // Inspect the current selection's computed font-family, font-size, and active formatting states
   const updateSelectionFormattingState = useCallback(() => {
@@ -2415,6 +2506,10 @@ export const TextEditor: React.FC<TextEditorProps> = ({
         setSelectionStats(null);
         return;
       }
+
+      // v0.8.1: anchors whose caret has moved away are removed here too, so
+      // clicking elsewhere (without typing) also cleans them up.
+      cleanupCaretAnchors(editorRef.current);
 
       // Word and character count of selected text
       if (!sel.isCollapsed && editorRef.current.contains(sel.anchorNode)) {
@@ -2500,7 +2595,13 @@ export const TextEditor: React.FC<TextEditorProps> = ({
 
         // Detect background / highlight color
         const bg = computed.backgroundColor;
-        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+        if (highlightOneShotSyncGuardRef.current) {
+          // Consume the guard: the caret currently sits inside text that was
+          // just one-shot highlighted — do NOT treat that as an armed
+          // highlighter (v0.8.0 one-shot semantics).
+          highlightOneShotSyncGuardRef.current = false;
+          setActiveHighlightColor('transparent');
+        } else if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
           setActiveHighlightColor(bg);
         } else {
           setActiveHighlightColor('transparent');
@@ -3199,6 +3300,17 @@ export const TextEditor: React.FC<TextEditorProps> = ({
           }
         }
       }
+    } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && inlineSuggestion && harperSuggestionsVertical && inlineSuggestion.choices.length > 1) {
+      // Inline autocorrect (v0.8.1): in the vertical-list layout ↑/↓ move the
+      // selection between candidates (Tab still applies the selected one).
+      e.preventDefault();
+      cycleInlineSuggestionChoice(e.key === 'ArrowDown' ? 1 : -1);
+    } else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && inlineSuggestion && !harperSuggestionsVertical && inlineSuggestion.choices.length > 1) {
+      // Inline autocorrect (v0.8.0): while the suggestion popup is open in the
+      // horizontal layout the ←/→ arrows cycle through the candidate
+      // corrections instead of moving the caret (Esc dismisses, Tab confirms).
+      e.preventDefault();
+      cycleInlineSuggestionChoice(e.key === 'ArrowRight' ? 1 : -1);
     } else if (e.key === 'Escape' && inlineSuggestion) {
       // Inline autocorrect: dismiss without changing anything
       e.preventDefault();
@@ -3260,6 +3372,14 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   const mobileListsRef = useRef<HTMLDivElement>(null);
   const folderDocsMenuRef = useRef<HTMLDivElement>(null);
   const autoSaveMenuRef = useRef<HTMLDivElement>(null);
+  // v0.8.1: the manual Save button — exempt from the auto-save menu's
+  // outside-close while an ANDROID long-press just opened that menu.
+  const saveBtnRef = useRef<HTMLButtonElement>(null);
+  // v0.8.2: phones show the ICON-ONLY save button in the mobile top bar —
+  // the desktop one (saveBtnRef) is inside a hidden md:flex row there. The
+  // long-press lives on BOTH buttons; the outside-close guard must exempt
+  // whichever one is actually on screen.
+  const saveBtnMobileRef = useRef<HTMLButtonElement>(null);
 
   // Close color, font size, and dropdown popups when clicking outside
   useEffect(() => {
@@ -3302,7 +3422,23 @@ export const TextEditor: React.FC<TextEditorProps> = ({
         setShowFolderDocsMenu(false);
       }
       if (autoSaveMenuRef.current && !autoSaveMenuRef.current.contains(target)) {
-        setShowAutoSaveMenu(false);
+        // v0.8.1 ANDROID FIX: a long-press on the Save button opens this menu;
+        // when the finger then lifts, the browser synthesizes a mousedown on
+        // the Save button which landed OUTSIDE the menu ref and closed the
+        // menu the same instant it opened ("long-press opens nothing").
+        // While the long-press flag is still hot, the Save button counts as
+        // inside. The flag is consumed right after by the button's click
+        // handler, so normal outside clicks keep closing the menu.
+        const longPressJustFired = saveLongPressFiredRef.current;
+        // v0.8.2: check BOTH save buttons (desktop row + mobile top bar) —
+        // only one is visible at a time, the other contains() returns false.
+        const onSaveButton = !!(
+          (saveBtnRef.current && saveBtnRef.current.contains(target)) ||
+          (saveBtnMobileRef.current && saveBtnMobileRef.current.contains(target))
+        );
+        if (!(longPressJustFired && onSaveButton)) {
+          setShowAutoSaveMenu(false);
+        }
       }
       if (docStatusMenuRef.current && !docStatusMenuRef.current.contains(target)) {
         setShowDocStatusMenu(false);
@@ -3319,6 +3455,82 @@ export const TextEditor: React.FC<TextEditorProps> = ({
       window.document.removeEventListener('mousedown', handleDocumentClick);
     };
   }, []);
+
+  // v0.8.0: ANDROID-ONLY — long-pressing the manual save button opens the
+  // Auto-Save interval dropdown (the compact mobile toolbar hides the
+  // "Auto-Save:" label, so touch users had no way to reach it). A fired
+  // long-press suppresses the trailing click so the press does not ALSO
+  // trigger a manual save.
+  const saveLongPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const saveLongPressFiredRef = useRef(false);
+  const startSaveLongPress = () => {
+    if (!ANDROID_APP) return;
+    saveLongPressFiredRef.current = false;
+    if (saveLongPressTimerRef.current) clearTimeout(saveLongPressTimerRef.current);
+    saveLongPressTimerRef.current = setTimeout(() => {
+      saveLongPressFiredRef.current = true;
+      try { navigator.vibrate?.(12); } catch { /* haptics optional */ }
+      setShowFolderDocsMenu(false);
+      setShowAutoSaveMenu(true);
+    }, 500);
+  };
+  const cancelSaveLongPress = () => {
+    if (saveLongPressTimerRef.current) {
+      clearTimeout(saveLongPressTimerRef.current);
+      saveLongPressTimerRef.current = null;
+    }
+  };
+
+  // v0.8.2: the Auto-Save interval popover markup, renderable from BOTH the
+  // desktop toolbar button and the mobile top-bar save button. The desktop
+  // row is `hidden md:flex`, so a popover rendered only there is INVISIBLE
+  // on phones — that is why v0.8.0/v0.8.1's long-press "opened nothing"
+  // even when the state flipped. Each instance gets a unique id suffix;
+  // taps inside are insulated from the document-level outside-close via the
+  // stopPropagation handlers on the popover root.
+  const renderAutoSaveMenuPopover = (idSuffix: string) => {
+    if (!showAutoSaveMenu) return null;
+    return (
+      <div
+        id={`autosave-menu-popover-${idSuffix}`}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        className={`absolute top-full right-0 mt-1.5 w-52 rounded-xl border shadow-2xl z-50 p-2 backdrop-blur-md ${
+          isDarkMode ? 'bg-[#141414]/95 border-neutral-700 text-neutral-200' : 'bg-white/95 border-neutral-200 text-neutral-900'
+        }`}
+      >
+        <div className="px-2 py-1 text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-1">
+          Auto-save interval
+        </div>
+        <div className="space-y-0.5">
+          {(['every_edit', '1m', '3m', '5m', '10m', 'off'] as AutoSaveInterval[]).map((int) => (
+            <button
+              key={int}
+              onClick={() => {
+                onChangeAutoSaveInterval(int);
+                setShowAutoSaveMenu(false);
+              }}
+              className={`w-full px-2.5 py-1.5 text-left text-xs rounded-md flex items-center justify-between transition-colors ${
+                autoSaveInterval === int
+                  ? isDarkMode ? 'bg-neutral-800 text-white font-semibold' : 'bg-neutral-100 text-black font-semibold'
+                  : 'hover:bg-neutral-100 dark:hover:bg-neutral-850 text-neutral-600 dark:text-neutral-400'
+              }`}
+            >
+              <span>
+                {int === 'every_edit' && 'On Every Edit'}
+                {int === '1m' && 'Every 1 Minute'}
+                {int === '3m' && 'Every 3 Minutes'}
+                {int === '5m' && 'Every 5 Minutes'}
+                {int === '10m' && 'Every 10 Minutes'}
+                {int === 'off' && 'Off (Manual Only)'}
+              </span>
+              {autoSaveInterval === int && <Check className="w-3.5 h-3.5" />}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   // Handler for modifying one of the standard palette boxes (slot 0 is fixed auto theme default)
   const handleUpdateStandardColor = (index: number, newColor: string) => {
@@ -3499,6 +3711,19 @@ export const TextEditor: React.FC<TextEditorProps> = ({
     const normActive = normalizeColorToRgb(activeHighlightColor);
     const normTarget = normalizeColorToRgb(colorValue);
 
+    // v0.8.0: deciding whether the highlight LATCHES (keeps painting text you
+    // type afterwards) depends on how it is applied:
+    //   - selection + color  → one-shot paint: the selected text is
+    //     highlighted, then the active highlight resets to transparent so
+    //     anything typed afterwards stays unhighlighted.
+    //   - collapsed caret    → the highlighter stays armed (previous
+    //     behavior): every character typed is highlighted until toggled off.
+    let hasTextSelection = false;
+    try {
+      const cur = window.getSelection();
+      hasTextSelection = !!cur && cur.rangeCount > 0 && !cur.getRangeAt(0).collapsed;
+    } catch { hasTextSelection = false; }
+
     // If already highlighted with this exact color, toggle it OFF
     if (normActive !== 'transparent' && normActive === normTarget) {
       executeCommand('hiliteColor', 'transparent');
@@ -3507,7 +3732,78 @@ export const TextEditor: React.FC<TextEditorProps> = ({
     } else {
       executeCommand('hiliteColor', colorValue);
       tagHighlightInSelection(hlKey, colorValue);
-      setActiveHighlightColor(colorValue);
+      if (hasTextSelection) {
+        // v0.8.1 ONE-SHOT, take two. The v0.8.0 attempt cleared the browser's
+        // typing style, but that alone cannot stop DOM-adjacency inheritance:
+        // with the caret resting at the end of the freshly painted styled
+        // element, Chromium keeps inserting typed text INSIDE it (the user's
+        // "hit space and the space + next word come out highlighted").
+        // The fix is physical — relocate the caret OUTSIDE the styled element
+        // into a zero-width anchor node, then clear the typing style there.
+        try {
+          const cur = window.getSelection();
+          const editorEl = editorRef.current;
+          if (cur && cur.rangeCount > 0 && editorEl) {
+            // 1. Collapse the selection to the end of the painted range.
+            const endRange = cur.getRangeAt(0).cloneRange();
+            endRange.collapse(false);
+            cur.removeAllRanges();
+            cur.addRange(endRange);
+
+            // 2. Find the OUTERMOST styled ancestor the caret would inherit
+            //    its background from (walking up to the editor root).
+            let node: Node | null = cur.getRangeAt(0).startContainer;
+            let styledEl: HTMLElement | null = null;
+            while (node && node !== editorEl) {
+              if (node.nodeType === Node.ELEMENT_NODE) {
+                const el = node as HTMLElement;
+                const hasTag = el.hasAttribute('data-mundus-hl');
+                let bgStyled = false;
+                try {
+                  const bg = normalizeColorToRgb(window.getComputedStyle(el).backgroundColor || '');
+                  bgStyled = !!bg && bg !== 'transparent';
+                } catch { bgStyled = false; }
+                if (hasTag || bgStyled) styledEl = el;
+              }
+              node = node.parentNode;
+            }
+
+            // 3. Insert a NON-EDITABLE zero-width anchor right after the
+            //    styled element and place the caret immediately AFTER it.
+            //    Chromium canonicalizes insertion points to the deep-equivalent
+            //    position — a plain (editable) text-node anchor parked at the
+            //    span boundary loses: every typed character "bounces" INTO the
+            //    styled element (verified empirically). A contenteditable=false
+            //    inline element breaks the equivalence: [span-end] and
+            //    [after-anchor] are no longer the same position, so typed
+            //    characters land in the plain text after the highlight.
+            if (styledEl && styledEl.parentNode) {
+              const anchor = window.document.createElement('span');
+              anchor.setAttribute('data-mundus-caret-anchor', '');
+              anchor.contentEditable = 'false';
+              anchor.appendChild(window.document.createTextNode('\u200B'));
+              styledEl.parentNode.insertBefore(anchor, styledEl.nextSibling);
+              const anchorRange = window.document.createRange();
+              anchorRange.setStartAfter(anchor);
+              anchorRange.collapse(true);
+              cur.removeAllRanges();
+              cur.addRange(anchorRange);
+            }
+
+            // 4. NOTE: no collapsed hiliteColor("transparent") stamp here —
+            //    v0.8.0 used one to clear the paint's typing style, but the
+            //    collapsed command materializes a style holder at the caret
+            //    and drags the insertion point back to the styled boundary,
+            //    undoing the anchor. Selection juggling above already clears
+            //    the typing style, and the anchor physically owns the
+            //    insertion point now (verified empirically).
+          }
+        } catch { /* selection juggling is best-effort */ }
+        highlightOneShotSyncGuardRef.current = true;
+        setActiveHighlightColor('transparent');
+      } else {
+        setActiveHighlightColor(colorValue);
+      }
     }
     setShowHighlightPicker(false);
     handleEditorInput();
@@ -3755,28 +4051,45 @@ export const TextEditor: React.FC<TextEditorProps> = ({
                 />
               </div>
 
-              {/* Save Button (Icon-Only on Mobile) */}
-              <button
-                id="btn-save-manual-mobile"
-                onClick={handleManualSave}
-                title="Save changes (Ctrl+S)"
-                aria-label="Save changes"
-                className={`flex items-center justify-center w-8 h-8 rounded-lg border text-xs font-medium shrink-0 transition-all shadow-2xs cursor-pointer ${
-                  saveSuccessTick
-                    ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 border-neutral-900 dark:border-white'
-                    : isDarkMode
-                    ? 'border-neutral-700/80 bg-neutral-900 hover:bg-neutral-800 text-neutral-300'
-                    : 'border-neutral-300/80 bg-white hover:bg-neutral-100 text-neutral-800'
-                }`}
-              >
-                {saveSuccessTick ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
-                ) : isSaving ? (
-                  <span className="w-2 h-2 rounded-full bg-neutral-400 animate-ping" />
-                ) : (
-                  <Save className="w-3.5 h-3.5" />
-                )}
-              </button>
+              {/* Save Button (Icon-Only on Mobile) — v0.8.2: ANDROID long-press
+                  opens the Auto-Save dropdown. v0.8.0/v0.8.1 wired the gesture
+                  to the DESKTOP save button only (hidden md:flex — invisible
+                  on phones) and rendered the popover inside that hidden row,
+                  so nothing could ever appear. The gesture + popover now live
+                  here too, anchored to the icon users actually touch. */}
+              <div className="relative shrink-0">
+                <button
+                  id="btn-save-manual-mobile"
+                  ref={saveBtnMobileRef}
+                  onClick={() => {
+                    if (saveLongPressFiredRef.current) { saveLongPressFiredRef.current = false; return; }
+                    handleManualSave();
+                  }}
+                  onTouchStart={startSaveLongPress}
+                  onTouchEnd={cancelSaveLongPress}
+                  onTouchMove={cancelSaveLongPress}
+                  onTouchCancel={cancelSaveLongPress}
+                  onContextMenu={(e) => { if (ANDROID_APP) e.preventDefault(); }}
+                  title="Save changes (Ctrl+S) — hold for Auto-Save options"
+                  aria-label="Save changes"
+                  className={`flex items-center justify-center w-8 h-8 rounded-lg border text-xs font-medium shrink-0 transition-all shadow-2xs cursor-pointer select-none touch-manipulation ${
+                    saveSuccessTick
+                      ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 border-neutral-900 dark:border-white'
+                      : isDarkMode
+                      ? 'border-neutral-700/80 bg-neutral-900 hover:bg-neutral-800 text-neutral-300'
+                      : 'border-neutral-300/80 bg-white hover:bg-neutral-100 text-neutral-800'
+                  }`}
+                >
+                  {saveSuccessTick ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
+                  ) : isSaving ? (
+                    <span className="w-2 h-2 rounded-full bg-neutral-400 animate-ping" />
+                  ) : (
+                    <Save className="w-3.5 h-3.5" />
+                  )}
+                </button>
+                {renderAutoSaveMenuPopover('mobile')}
+              </div>
             </div>
 
             {/* Level 2: Unified Row with Status, Checkpoints, Auto Save, Export, Zen, Focus (Compact Icon-Only on Mobile) */}
@@ -4749,54 +5062,27 @@ export const TextEditor: React.FC<TextEditorProps> = ({
                   <ChevronDown className="w-2.5 h-2.5 opacity-60" />
                 </button>
 
-                {showAutoSaveMenu && (
-                  <div 
-                    id="autosave-menu-popover"
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => e.stopPropagation()}
-                    className={`absolute top-full right-0 mt-1.5 w-52 rounded-xl border shadow-2xl z-50 p-2 backdrop-blur-md ${
-                      isDarkMode ? 'bg-[#141414]/95 border-neutral-700 text-neutral-200' : 'bg-white/95 border-neutral-200 text-neutral-900'
-                    }`}
-                  >
-                    <div className="px-2 py-1 text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-1">
-                      Auto-save interval
-                    </div>
-                    <div className="space-y-0.5">
-                      {(['every_edit', '1m', '3m', '5m', '10m', 'off'] as AutoSaveInterval[]).map((int) => (
-                        <button
-                          key={int}
-                          onClick={() => {
-                            onChangeAutoSaveInterval(int);
-                            setShowAutoSaveMenu(false);
-                          }}
-                          className={`w-full px-2.5 py-1.5 text-left text-xs rounded-md flex items-center justify-between transition-colors ${
-                            autoSaveInterval === int
-                              ? isDarkMode ? 'bg-neutral-800 text-white font-semibold' : 'bg-neutral-100 text-black font-semibold'
-                              : 'hover:bg-neutral-100 dark:hover:bg-neutral-850 text-neutral-600 dark:text-neutral-400'
-                          }`}
-                        >
-                          <span>
-                            {int === 'every_edit' && 'On Every Edit'}
-                            {int === '1m' && 'Every 1 Minute'}
-                            {int === '3m' && 'Every 3 Minutes'}
-                            {int === '5m' && 'Every 5 Minutes'}
-                            {int === '10m' && 'Every 10 Minutes'}
-                            {int === 'off' && 'Off (Manual Only)'}
-                          </span>
-                          {autoSaveInterval === int && <Check className="w-3.5 h-3.5" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {renderAutoSaveMenuPopover('desktop')}
               </div>
 
-              {/* Manual Cloud Save Button */}
+              {/* Manual Cloud Save Button — v0.8.0: ANDROID long-press opens
+                  the Auto-Save dropdown (handlers declared with the other
+                  toolbar refs). A fired long-press suppresses the trailing
+                  click so the press does not ALSO trigger a manual save. */}
               <button
                 id="btn-save-manual"
-                onClick={handleManualSave}
+                ref={saveBtnRef}
+                onClick={() => {
+                  if (saveLongPressFiredRef.current) { saveLongPressFiredRef.current = false; return; }
+                  handleManualSave();
+                }}
+                onTouchStart={startSaveLongPress}
+                onTouchEnd={cancelSaveLongPress}
+                onTouchMove={cancelSaveLongPress}
+                onTouchCancel={cancelSaveLongPress}
+                onContextMenu={(e) => { if (ANDROID_APP) e.preventDefault(); }}
                 title="Save changes (Ctrl+S)"
-                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-md border text-xs font-medium transition-all shadow-2xs ${
+                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-md border text-xs font-medium transition-all shadow-2xs select-none touch-manipulation ${
                   saveSuccessTick
                     ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 border-neutral-900 dark:border-white'
                     : isDarkMode
@@ -6776,18 +7062,86 @@ export const TextEditor: React.FC<TextEditorProps> = ({
           {inlineSuggestion && (
             <div
               data-mundus-inline-suggestion="true"
-              className={`fixed z-[80] flex items-center gap-2 rounded-xl border px-2.5 py-1.5 shadow-2xl backdrop-blur-md ${
+              className={`fixed z-[80] rounded-xl border shadow-2xl backdrop-blur-md ${
+                harperSuggestionsVertical ? 'flex flex-col w-64 p-2 gap-1' : 'flex items-center gap-2 px-2.5 py-1.5'
+              } ${
                 isDarkMode
                   ? 'bg-neutral-900/95 border-neutral-700 text-neutral-100'
                   : 'bg-white/95 border-neutral-200 text-neutral-800'
               }`}
               style={{
-                top: inlineSuggestion.rectBottom + 46 > window.innerHeight
-                  ? Math.max(8, inlineSuggestion.rectTop - 46)
+                top: inlineSuggestion.rectBottom + (harperSuggestionsVertical ? 60 : 46) > window.innerHeight
+                  ? Math.max(8, inlineSuggestion.rectTop - (harperSuggestionsVertical ? 120 : 46))
                   : inlineSuggestion.rectBottom + 6,
-                left: Math.max(8, Math.min(inlineSuggestion.rectLeft, window.innerWidth - 320)),
+                left: Math.max(8, Math.min(inlineSuggestion.rectLeft, window.innerWidth - (harperSuggestionsVertical ? 280 : 320))),
               }}
             >
+              {harperSuggestionsVertical ? (
+                /* v0.8.1: vertical list layout — all candidates stacked, chosen
+                   with ↑/↓ (or click), applied with Tab / click. */
+                <>
+                  <div className="flex items-center gap-2 px-0.5">
+                    <span
+                      className="font-mono text-[11px] text-red-500 line-through decoration-red-400/80"
+                      title={inlineSuggestion.grammarMessage || undefined}
+                    >
+                      {inlineSuggestion.originalWord}
+                    </span>
+                    <span className="text-[10px] opacity-40">→</span>
+                    {inlineSuggestion.lintKind && (
+                      <span
+                        className={`text-[9px] font-mono uppercase tracking-wider rounded px-1 py-0.5 border whitespace-nowrap ${
+                          isDarkMode ? 'border-neutral-600 text-neutral-400' : 'border-neutral-300 text-neutral-500'
+                        }`}
+                      >
+                        {inlineSuggestion.lintKind}
+                      </span>
+                    )}
+                    <span className="ml-auto text-[9px] font-mono opacity-50 whitespace-nowrap select-none">↑↓ · Tab</span>
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    {inlineSuggestion.choices.map((choice, i) => {
+                      const selected = i === inlineSuggestion.choiceIndex;
+                      return (
+                        <button
+                          key={`${i}-${choice}`}
+                          type="button"
+                          tabIndex={-1}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            acceptInlineSuggestion(selected ? inlineSuggestion : { ...inlineSuggestion, choiceIndex: i, replacement: choice });
+                          }}
+                          className={`w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-left text-[11px] font-semibold transition-colors ${
+                            selected
+                              ? 'bg-emerald-600 text-white'
+                              : isDarkMode
+                              ? 'hover:bg-neutral-800 text-neutral-200'
+                              : 'hover:bg-neutral-100 text-neutral-700'
+                          }`}
+                          title={selected ? 'Apply (Tab)' : undefined}
+                        >
+                          <span className="truncate">
+                            {choice === '' ? <span className="italic opacity-90">(delete)</span> : choice}
+                          </span>
+                          {selected && <Check className="w-3 h-3 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); addInlineWordToDictionary(inlineSuggestion); }}
+                    className={`self-start rounded-lg px-1.5 py-0.5 text-[10px] border transition-colors whitespace-nowrap ${
+                      isDarkMode ? 'border-neutral-600 hover:bg-neutral-700/70' : 'border-neutral-300 hover:bg-neutral-100'
+                    }`}
+                    title={`Keep "${inlineSuggestion.originalWord}" — add it to this project's dictionary`}
+                  >
+                    + Add
+                  </button>
+                </>
+              ) : (
+                /* Horizontal cycle layout (default) */
+                <>
               <span
                 className="font-mono text-[11px] text-red-500 line-through decoration-red-400/80"
                 title={inlineSuggestion.grammarMessage || undefined}
@@ -6795,17 +7149,44 @@ export const TextEditor: React.FC<TextEditorProps> = ({
                 {inlineSuggestion.originalWord}
               </span>
               <span className="text-[10px] opacity-40">→</span>
+              {/* v0.8.0: ←/→ (or the chevrons) cycle through up to 3 candidate
+                  corrections; the shown one is what Tab / the button accepts.
+                  A Remove-kind candidate displays as '(delete)'. */}
+              {inlineSuggestion.choices.length > 1 && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onMouseDown={(e) => { e.preventDefault(); cycleInlineSuggestionChoice(-1); }}
+                  className="rounded-md px-1 py-0.5 text-[11px] text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-200/60 dark:hover:bg-neutral-700/60 transition-colors cursor-pointer select-none"
+                  title="Previous suggestion (←)"
+                >
+                  ‹
+                </button>
+              )}
               <button
                 type="button"
                 onMouseDown={(e) => { e.preventDefault(); acceptInlineSuggestion(inlineSuggestion); }}
                 className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-0.5 text-[11px] font-semibold transition-colors"
-                title={inlineSuggestion.grammarMessage || `Replace with "${inlineSuggestion.replacement}" (Tab)`}
+                title={inlineSuggestion.grammarMessage || `Replace with "${inlineSuggestion.replacement || '(delete)'}" (Tab)`}
               >
-                {inlineSuggestion.replacement}
+                {inlineSuggestion.replacement === ''
+                  ? <span className="italic opacity-90">(delete)</span>
+                  : inlineSuggestion.replacement}
               </button>
-              {inlineSuggestion.alternatives.length > 0 && (
-                <span className="text-[10px] opacity-50 whitespace-nowrap">
-                  or {inlineSuggestion.alternatives.join(', ')}
+              {inlineSuggestion.choices.length > 1 && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onMouseDown={(e) => { e.preventDefault(); cycleInlineSuggestionChoice(1); }}
+                  className="rounded-md px-1 py-0.5 text-[11px] text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-200/60 dark:hover:bg-neutral-700/60 transition-colors cursor-pointer select-none"
+                  title="Next suggestion (→)"
+                >
+                  ›
+                </button>
+              )}
+              {inlineSuggestion.choices.length > 1 && (
+                <span className="text-[9px] font-mono opacity-50 whitespace-nowrap select-none">
+                  {inlineSuggestion.choiceIndex + 1}/{inlineSuggestion.choices.length}
                 </span>
               )}
               {inlineSuggestion.lintKind && (
@@ -6828,6 +7209,8 @@ export const TextEditor: React.FC<TextEditorProps> = ({
                 + Add
               </button>
               <span className="text-[10px] opacity-40 font-mono whitespace-nowrap">Tab ↹</span>
+                </>
+              )}
             </div>
           )}
 
@@ -7634,6 +8017,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
         documentPlainText={document.plainText}
         isDarkMode={isDarkMode}
         activeMundusId={activeMundusId}
+        codexSections={codexSections}
         onNavigateToMap={onNavigateToMap}
         onSelectCharacter={(charId) => {
           setShowInThisSceneDrawer(false);

@@ -5,7 +5,8 @@
 // character titles, subtitles and description fields must NEVER trigger.
 // Generic words ("the", "of", ...) never trigger on their own.
 // Run: npx tsx scripts/test_scene_detection.ts
-import { detectInSceneEntryIds, detectInSceneCharacterIds } from '../src/lib/sceneDetection';
+import { detectInSceneEntryIds, detectInSceneCharacterIds, getEntryDocumentMention } from '../src/lib/sceneDetection';
+import { matchesMention } from '../src/lib/mentionDetection';
 import type { CodexEntry, Character } from '../src/types';
 
 let pass = 0, fail = 0;
@@ -106,6 +107,30 @@ check('whitespace text -> no characters', detectInSceneCharacterIds(chars, '   \
 check('null/undefined text -> empty set', detectInSceneEntryIds(entries, undefined).size === 0 && detectInSceneCharacterIds(chars, null as any).size === 0);
 check('empty rosters -> empty set', detectInSceneEntryIds([], 'Iron Crown').size === 0 && detectInSceneCharacterIds([], 'Mira').size === 0);
 check('same name in both fields detected independently', detectInSceneEntryIds(entries, 'Rovengard').has('b'));
+
+console.log('[8] v0.8.0 — matches never fire INSIDE words (xkylex / xkyle / kylex)');
+const kyleChars = [makeChar({ id: 'k', name: 'Kyle' })];
+const kyleEntries = [makeEntry({ id: 'ke', title: 'Kyle' })];
+for (const t of ['xkylex', 'xkyle', 'kylex', 'hkyle', 'Kyleton', 'KYLEISH']) {
+  check(`character "Kyle" NOT detected in "${t}"`, !detectInSceneCharacterIds(kyleChars, t).has('k'));
+  check(`entry "Kyle" NOT detected in "${t}"`, !detectInSceneEntryIds(kyleEntries, t).has('ke'));
+  check(`matchesMention("${t}", "kyle") is false`, !matchesMention(t, 'kyle'));
+}
+check('standalone Kyle still detected', detectInSceneCharacterIds(kyleChars, 'then Kyle spoke').has('k'));
+check('possessive Kyle\'s still detected', detectInSceneCharacterIds(kyleChars, "Kyle's sword").has('k'));
+check('multi-word name word part not glued either', !detectInSceneCharacterIds([makeChar({ id: 'kv', name: 'Kaelen Vance' })], 'xVancey').has('kv'));
+
+console.log('[9] v0.8.0 — getEntryDocumentMention (Codex doc list, whole-word)');
+check('title in text matches', getEntryDocumentMention('Chapter 1', 'Kyle walked home. ', 'Kyle') === 'Mentioned in text');
+check('NOT matched inside words (xkylex)', getEntryDocumentMention('Ch 1', 'xkylex and kylex', 'Kyle') === '');
+check('title-in-doc-title matches', getEntryDocumentMention('The Iron Crown rises', 'nothing here', 'Iron Crown') === 'In title');
+check('doc title glued word does NOT match', getEntryDocumentMention('IronCrownSaga', 'nothing', 'Iron Crown') === '');
+check('subtitle match (>=4 chars)', getEntryDocumentMention('Doc', 'seat of House Vance today', 'Rovengard', 'House Vance') === 'Subtitle match');
+check('short subtitle never matches (3 chars)', getEntryDocumentMention('Doc', 'the rug is warm', 'Rovengard', 'rug') === '');
+check('tag match (>=3 chars)', getEntryDocumentMention('Doc', 'the artifact glowed', 'Thing', undefined, ['artifact']) === 'Tag match');
+check('short tag never matches', getEntryDocumentMention('Doc', 'it is ok now', 'Thing', undefined, ['ok']) === '');
+check('too-short title rejected', getEntryDocumentMention('Doc', 'a b', 'a', undefined, []) === '');
+check('possessive still counts', getEntryDocumentMention('Doc', "Kyle's sword gleamed", 'Kyle') === 'Mentioned in text');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);

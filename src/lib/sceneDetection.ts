@@ -21,7 +21,7 @@
  * flexible inner whitespace, possessives still count).
  */
 import type { Character, CodexEntry } from '../types';
-import { matchesAnyMention } from './mentionDetection';
+import { matchesAnyMention, matchesMention } from './mentionDetection';
 
 /**
  * Words that are too generic to trigger detection on their own when they
@@ -99,4 +99,35 @@ export function detectInSceneCharacterIds(
   });
 
   return ids;
+}
+
+/**
+ * v0.8.0: shared whole-word "which documents mention this entry" checker
+ * (used by the Codex entry form's document list).
+ *
+ * The pre-0.8.0 implementation used raw substring matching
+ * (`docText.includes(entryTitle)`), so an entry titled "Kyle" was reported as
+ * mentioned by ANY document containing "xkylex", "xkyle" or "kylex" — within
+ * word matches leaked into every detection surface. All comparisons now go
+ * through matchesMention (Unicode whole-word boundaries, possessives still
+ * count). Returns the human-readable reason ('' when not mentioned).
+ */
+export function getEntryDocumentMention(
+  docTitle: string | null | undefined,
+  docText: string | null | undefined,
+  entryTitle: string,
+  entrySubtitle?: string,
+  entryTags?: string[]
+): string {
+  const title = (entryTitle || '').trim();
+  if (!title || title.length < 2) return '';
+  if (matchesMention(docTitle, title)) return 'In title';
+  if (matchesMention(docText, title)) return 'Mentioned in text';
+  const sub = (entrySubtitle || '').trim();
+  if (sub.length >= 4 && matchesMention(docText, sub)) return 'Subtitle match';
+  const tags = entryTags || [];
+  if (tags.some((t) => t && t.trim().length >= 3 && matchesMention(docText, t.trim()))) {
+    return 'Tag match';
+  }
+  return '';
 }

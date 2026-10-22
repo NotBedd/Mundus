@@ -211,24 +211,42 @@ export function pickCaretLint(lints: GrammarLint[], caretStart: number, caretEnd
 /**
  * Map a lint into the inline-popup state fields. Returns null when the lint
  * has no usable suggestion. Remove-kind suggestions surface as '(delete)'.
+ *
+ * v0.8.0: the popup can now cycle through up to THREE corrections with the
+ * arrow keys, so the full candidate list is returned as `choices` (index 0
+ * keeps historical precedence, i.e. Harper's own top suggestion). The
+ * pre-0.8.0 `replacement`/`alternatives` fields are still filled in for
+ * backward compatibility (unit tests + dictionary fallback consumers).
  */
 export function lintToSuggestion(lint: GrammarLint): {
   originalWord: string;
   replacement: string;
   alternatives: string[];
+  choices: string[];
   lintKind: string;
   grammarMessage: string;
 } | null {
   if (!lint.suggestions.length) return null;
   const first = lint.suggestions[0];
+  // Build the cycle list: up to 3 unique candidates, Remove-kind mapped to ''.
+  const choices: string[] = [];
+  for (const s of lint.suggestions) {
+    if (choices.length >= 3) break;
+    if (!s.remove && !s.replacement) continue; // skip empty non-remove entries
+    const val = s.remove ? '' : s.replacement;
+    if (choices.includes(val)) continue; // dedupe identical candidates
+    choices.push(val);
+  }
+  if (choices.length === 0) return null;
   const alternatives = lint.suggestions
     .slice(1, 3)
     .map((s) => (s.remove ? '(delete)' : s.replacement))
     .filter((t) => t && t !== first.replacement);
   return {
     originalWord: lint.problemText,
-    replacement: first.remove ? '' : first.replacement,
+    replacement: choices[0],
     alternatives,
+    choices,
     lintKind: lint.lintKind,
     grammarMessage: lint.message,
   };
