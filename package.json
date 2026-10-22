@@ -61,5 +61,13 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
     "wait-on": "^9.1.0"
+  },
+  "build": {
+    "nsis": {
+      "differentialPackage": false
+    },
+    "dmg": {
+      "writeUpdateInfo": false
+    }
   }
 }
