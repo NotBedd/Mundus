@@ -1,0 +1,92 @@
+name: Build Android APK (from uploaded zip)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Tag of the release holding the zip (e.g. build-inputs)'
+        required: true
+        type: string
+      zip_name:
+        description: 'Exact zip asset name (e.g. mundus_v0.8.6.zip)'
+        required: true
+        type: string
+      attach_apk_to_release:
+        description: 'Also attach the built APK to that release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # needed only for the optional APK attach step
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download uploaded zip from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ inputs.release_tag }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "${{ inputs.zip_name }}"
+
+      - name: Unzip and locate the Android project
+        run: |
+          unzip -q "${{ inputs.zip_name }}" -d project
+          if [ ! -d project/android ]; then
+            found=$(find project -maxdepth 3 -type d -name android | head -1)
+            [ -n "$found" ] && mv "$found" project/android
+          fi
+          test -d project/android || { echo "::error::No android/ folder in this zip"; exit 1; }
+
+      - name: Fail fast on source-only zips
+        run: |
+          test -f project/android/app/src/main/assets/public/index.html \
+            || { echo "::error::Zip has no built web payload (android/app/src/main/assets/public/). Run 'npm run android:sync' and re-pack — a source-only zip builds a BLANK APK."; exit 1; }
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+
+      - name: Build APK (debug variant, same as Android Studio "Build APK(s)")
+        working-directory: project/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Collect APK
+        id: apk
+        run: |
+          APK_PATHS=$(find project/android/app/build/outputs/apk -name '*.apk' | tr '\n' ' ')
+          echo "paths=$APK_PATHS" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mundus-apk
+          path: ${{ steps.apk.outputs.paths }}
+          if-no-files-found: error
+
+      - name: Attach APK to the release (optional)
+        if: ${{ inputs.attach_apk_to_release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for f in ${{ steps.apk.outputs.paths }}; do
+            gh release upload "${{ inputs.release_tag }}" "$f" --repo "$GITHUB_REPOSITORY" --clobber
+          done
+
+      - name: Cache Gradle for next time
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-mundus-v1
+          restore-keys: gradle-mundus-v1
