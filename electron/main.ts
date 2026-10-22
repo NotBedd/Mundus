@@ -630,7 +630,7 @@ function createWindow() {
     minHeight: 600,
     icon: appIcon,
     backgroundColor: '#000000',
-    title: 'Mundus v0.8.2',
+    title: 'Mundus v0.8.3',
     show: false,
     autoHideMenuBar: true,
     titleBarStyle: 'default',

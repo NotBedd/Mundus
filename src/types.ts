@@ -83,6 +83,11 @@ export interface MundusProject {
   color?: string;
   coverUrl?: string;
   pageFormat?: PageFormat;
+  // v0.8.3: where the loose (unfiled) files block sits in Mundus View and in
+  // the exported book. Toggled from the reorder panel inside Mundus View
+  // (not Settings). Defaults to 'bottom', which matches the historical layout
+  // (the unfiled section always rendered after the folder sections).
+  looseDocsPosition?: 'top' | 'bottom';
   createdAt: string;
   updatedAt: string;
 }
@@ -158,6 +163,12 @@ export interface NovelDocument {
   syncStatus?: DocumentSyncState;
   timelineInfo?: SceneTimelineInfo;
   visualImages?: DocumentVisualImage[]; // Movable & resizable visual images placed on the page
+  // v0.8.3: manual book order from the Mundus View reorder mode. Documents
+  // WITHOUT an index sort after indexed ones (stable array order), so newly
+  // created documents automatically land at the end of their scope until the
+  // author places them. Drives both the Mundus View display order and the
+  // Export Book sequence.
+  bookOrderIndex?: number;
   createdAt: string;
   updatedAt: string;
 }

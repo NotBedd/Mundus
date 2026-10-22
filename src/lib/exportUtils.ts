@@ -714,13 +714,23 @@ export function exportToHtml(doc: NovelDocument, options?: ExportPdfOptions): bo
  * clean typography, page dimensions, and stripped highlighters/colors.
  */
 export function buildFullPrintableHtml(doc: NovelDocument, optionsOrFormat?: ExportPdfOptions | string): string {
+  const rawHtml = doc.content || `<p>${doc.plainText || ''}</p>`;
+  const cleanedHtml = cleanDocumentHtmlForPrint(rawHtml, doc.visualImages);
+  return buildPrintableHtmlShell(cleanedHtml, doc.title || 'Untitled Document', optionsOrFormat);
+}
+
+/**
+ * v0.8.3: shared printable-HTML shell (page CSS, fonts, paper adaptation)
+ * extracted verbatim from buildFullPrintableHtml so Export Book can print
+ * many chapters through the exact same Electron printToPDF pipeline.
+ */
+export function buildPrintableHtmlShell(bodyHtml: string, title: string, optionsOrFormat?: ExportPdfOptions | string): string {
   const options: ExportPdfOptions = typeof optionsOrFormat === 'string'
     ? { pageFormat: optionsOrFormat }
     : (optionsOrFormat || {});
 
-  const cleanTitle = (doc.title || 'Untitled Document').trim();
-  const rawHtml = doc.content || `<p>${doc.plainText || ''}</p>`;
-  const cleanedHtml = cleanDocumentHtmlForPrint(rawHtml, doc.visualImages);
+  const cleanTitle = (title || 'Untitled Document').trim();
+  const cleanedHtml = bodyHtml;
 
   let pageSizeCss = 'letter';
   let pageMargin = '20mm 18mm';
@@ -1178,7 +1188,7 @@ function buildContentCloneHtml(doc: NovelDocument): string {
   return html || '<p><br></p>';
 }
 
-interface PaperClone {
+export interface PaperClone {
   content: HTMLDivElement;
   totalPages: number;
   pageConfig: PageFormatConfig;
@@ -1190,7 +1200,7 @@ interface PaperClone {
  * exact page width used by the editor, then runs the SAME pagination engine
  * as Writing Mode so every block lands on the same page as the author sees.
  */
-async function buildPaperClone(doc: NovelDocument, pageConfig: PageFormatConfig): Promise<PaperClone> {
+export async function buildPaperClone(doc: NovelDocument, pageConfig: PageFormatConfig): Promise<PaperClone> {
   // Inject the paper adaptation CSS once
   let styleEl = document.getElementById('mundus-pdf-paper-style') as HTMLStyleElement | null;
   if (!styleEl) {
@@ -1264,6 +1274,50 @@ async function buildPaperClone(doc: NovelDocument, pageConfig: PageFormatConfig)
   return { content, totalPages, pageConfig, dispose };
 }
 
+/**
+ * v0.8.3: renders every paginated page of a paper clone into `pdf` as a
+ * full-bleed image page (extracted from exportToPdf so Export Book can
+ * append many chapters into ONE jsPDF document). Behavior identical to the
+ * original in exportToPdf.
+ */
+export async function appendPaperCloneToPdf(
+  pdf: jsPDF,
+  clone: PaperClone,
+  onProgress?: (pageIndex: number, totalPages: number) => void
+): Promise<void> {
+  const PAGE_CYCLE = clone.pageConfig.height + clone.pageConfig.gap;
+  const pdfWpt = clone.pageConfig.width * PX_TO_PT;
+  const pdfHpt = clone.pageConfig.height * PX_TO_PT;
+
+  for (let pageIndex = 0; pageIndex < clone.totalPages; pageIndex++) {
+    onProgress?.(pageIndex, clone.totalPages);
+
+    if (pageIndex > 0) {
+      pdf.addPage([pdfWpt, pdfHpt], 'portrait');
+    }
+
+    const canvas = await html2canvas(clone.content, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true,
+      allowTaint: false,
+      logging: false,
+      // html2canvas adds the element's document bounds to these offsets
+      // automatically, so they are element-relative regardless of where the
+      // offscreen clone physically sits.
+      x: 0,
+      y: pageIndex * PAGE_CYCLE,
+      width: clone.pageConfig.width,
+      height: clone.pageConfig.height,
+      scrollX: 0,
+      scrollY: 0,
+      imageTimeout: 15000,
+    });
+
+    pdf.addImage(canvas, 'PNG', 0, 0, pdfWpt, pdfHpt, undefined, 'FAST');
+  }
+}
+
 export async function exportToPdf(doc: NovelDocument, optionsOrFormat?: ExportPdfOptions | string): Promise<boolean> {
   const options: ExportPdfOptions = typeof optionsOrFormat === 'string'
     ? { pageFormat: optionsOrFormat }
@@ -1314,7 +1368,6 @@ export async function exportToPdf(doc: NovelDocument, optionsOrFormat?: ExportPd
   try {
     clone = await buildPaperClone(doc, pageConfig);
 
-    const PAGE_CYCLE = pageConfig.height + pageConfig.gap;
     const pdfWpt = pageConfig.width * PX_TO_PT;
     const pdfHpt = pageConfig.height * PX_TO_PT;
 
@@ -1325,37 +1378,13 @@ export async function exportToPdf(doc: NovelDocument, optionsOrFormat?: ExportPd
       compress: true,
     });
 
-    for (let pageIndex = 0; pageIndex < clone.totalPages; pageIndex++) {
+    await appendPaperCloneToPdf(pdf, clone, (pageIndex, totalPages) => {
       showExportToast(
-        `Compiling PDF — rendering page ${pageIndex + 1} of ${clone.totalPages}...`,
+        `Compiling PDF — rendering page ${pageIndex + 1} of ${totalPages}...`,
         'loading',
         600000
       );
-
-      if (pageIndex > 0) {
-        pdf.addPage([pdfWpt, pdfHpt], 'portrait');
-      }
-
-      const canvas = await html2canvas(clone.content, {
-        backgroundColor: '#ffffff',
-        scale: 2,
-        useCORS: true,
-        allowTaint: false,
-        logging: false,
-        // html2canvas adds the element's document bounds to these offsets
-        // automatically, so they are element-relative regardless of where the
-        // offscreen clone physically sits.
-        x: 0,
-        y: pageIndex * PAGE_CYCLE,
-        width: pageConfig.width,
-        height: pageConfig.height,
-        scrollX: 0,
-        scrollY: 0,
-        imageTimeout: 15000,
-      });
-
-      pdf.addImage(canvas, 'PNG', 0, 0, pdfWpt, pdfHpt, undefined, 'FAST');
-    }
+    });
 
     // Embed the full native document into the PDF metadata so that importing
     // this PDF back into Mundus restores it losslessly (pages, colors, images,
@@ -1430,6 +1459,46 @@ export async function exportToDocx(doc: NovelDocument) {
   const cleanTitle = doc.title || 'Untitled Document';
   const html = doc.content || `<p>${doc.plainText}</p>`;
 
+  const paragraphs: Paragraph[] = [
+    new Paragraph({
+      text: cleanTitle,
+      heading: HeadingLevel.HEADING_1,
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 300 },
+    }),
+    ...htmlToDocxParagraphs(html),
+  ];
+
+  const docxFile = new Document({
+    sections: [{
+      properties: {},
+      children: paragraphs,
+    }],
+  });
+
+  const blob = await Packer.toBlob(docxFile);
+  const safeFilename = `${cleanTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}.docx`;
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = safeFilename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * v0.8.3: the v0.8.1 DOCX converter extracted verbatim so Export Book can
+ * chain many chapters through the exact same HTML→Word pipeline. Walks the
+ * content tree recursively so a Mundus document lands in Word with the same
+ * structure: headings, bold/italic/underline/strike (nested to any depth),
+ * text colors, highlighter shading, bullet/numbered lists, inline images
+ * (data URLs), and manual page breaks. Returns the document body paragraphs
+ * WITHOUT a title block.
+ */
+export function htmlToDocxParagraphs(html: string): Paragraph[] {
   const parser = new DOMParser();
   const htmlDoc = parser.parseFromString(html, 'text/html');
 
@@ -1557,14 +1626,7 @@ export async function exportToDocx(doc: NovelDocument) {
     return undefined;
   };
 
-  const paragraphs: Paragraph[] = [
-    new Paragraph({
-      text: cleanTitle,
-      heading: HeadingLevel.HEADING_1,
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 300 },
-    }),
-  ];
+  const paragraphs: Paragraph[] = [];
 
   const pushRunsAsParagraph = (runs: ParagraphChild[], base: Partial<{ heading: ReturnType<typeof headingFor>; indentLeft: number; bullet: boolean }> = {}) => {
     if (runs.length === 0) return;
@@ -1640,22 +1702,5 @@ export async function exportToDocx(doc: NovelDocument) {
 
   walkBlocks(htmlDoc.body);
 
-  const docxFile = new Document({
-    sections: [{
-      properties: {},
-      children: paragraphs,
-    }],
-  });
-
-  const blob = await Packer.toBlob(docxFile);
-  const safeFilename = `${cleanTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}.docx`;
-
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = safeFilename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  return paragraphs;
 }

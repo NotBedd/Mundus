@@ -22,17 +22,21 @@ import {
   FolderPlus,
   FolderTree,
   Edit2,
-  ChevronDown,
   ChevronRight,
   MoreVertical,
   MoveRight,
   Compass,
-  DatabaseBackup
+  DatabaseBackup,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { DoubleClickDeleteButton } from './DoubleClickDeleteButton';
 import { WindRoseLogo } from './WindRoseLogo';
 import type { NovelDocument, DocumentStatus, Folder, MundusProject } from '../types';
 import { exportToMarkdown, exportToPdf, exportToDocx, exportToMundus, exportToHtml } from '../lib/exportUtils';
+import { adjacentSwapReindex, resolveBookLayout } from '../lib/bookOrder';
+import { BookExportDialog } from './BookExportDialog';
 
 interface StartMenuProps {
   isOpen: boolean;
@@ -54,6 +58,9 @@ interface StartMenuProps {
   onToggleFavorite: (docId: string) => void;
   // v0.7.93: per-Mundus backup lives here (Mundus View header), not the sidebar
   onBackupMundus?: () => void;
+  // v0.8.3: book-order reordering (Mundus View reorder mode) + project-level toggles
+  onUpdateFolder?: (folderId: string, updates: Partial<Folder>) => void;
+  onUpdateProject?: (updates: Partial<MundusProject>) => void;
   isDarkMode: boolean;
 }
 
@@ -76,6 +83,8 @@ export const StartMenu: React.FC<StartMenuProps> = ({
   onDuplicateDocument,
   onToggleFavorite,
   onBackupMundus,
+  onUpdateFolder,
+  onUpdateProject,
   isDarkMode
 }) => {
   const [activeTab, setActiveTab] = useState<'recent' | 'new' | 'info'>('recent');
@@ -95,6 +104,21 @@ export const StartMenu: React.FC<StartMenuProps> = ({
   const startMenuContentRef = useRef<HTMLDivElement>(null);
   const isMarqueeDraggingRef = useRef(false);
   const marqueeStartPosRef = useRef({ x: 0, y: 0 });
+  // v0.8.3: book-order reorder mode + Export Book dialog
+  const [isReorderMode, setIsReorderMode] = useState<boolean>(false);
+  const [isExportBookOpen, setIsExportBookOpen] = useState<boolean>(false);
+
+  // v0.8.3: resolved book order (folders → their docs → loose block). With no
+  // manual reorders yet this resolves to the exact historical display order:
+  // docs sort stable by bookOrderIndex (all undefined → array order), folders
+  // by orderIndex (handleCreateFolder has always stamped it sequentially).
+  // MUST run before the `if (!isOpen) return null` early return below — hooks
+  // have to execute on every render, open or closed.
+  const bookLayout = React.useMemo(
+    () => resolveBookLayout(documents, folders, activeMundusProject),
+    [documents, folders, activeMundusProject]
+  );
+  const loosePosition = bookLayout.loosePosition;
 
   const handleContainerMouseDown = (e: React.MouseEvent) => {
     // If clicked on input, button, select, form, or interactive element, ignore
@@ -270,6 +294,151 @@ export const StartMenu: React.FC<StartMenuProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  /** Move a document one slot up/down within its book scope (folder or loose). */
+  const handleMoveDocInBook = (docId: string, direction: -1 | 1) => {
+    const doc = documents.find((d) => d.id === docId);
+    if (!doc) return;
+    const folderId = doc.folderId && folders.some((f) => f.id === doc.folderId) ? doc.folderId : undefined;
+    let scopeIds: string[] | null = null;
+    if (folderId) {
+      const group = bookLayout.folderGroups.find((g) => g.folder.id === folderId);
+      scopeIds = group ? group.docs.map((d) => d.id) : null;
+    } else {
+      scopeIds = bookLayout.looseDocs.map((d) => d.id);
+    }
+    if (!scopeIds) return;
+    const reindex = adjacentSwapReindex(scopeIds, docId, direction);
+    if (!reindex) return;
+    Object.entries(reindex).forEach(([id, idx]) => {
+      onUpdateDocument?.(id, { bookOrderIndex: idx });
+    });
+  };
+
+  /** Move a folder one slot up/down in the book order. */
+  const handleMoveFolderInBook = (folderId: string, direction: -1 | 1) => {
+    const seq = bookLayout.folderGroups.map((g) => g.folder.id);
+    const reindex = adjacentSwapReindex(seq, folderId, direction);
+    if (!reindex) return;
+    Object.entries(reindex).forEach(([id, idx]) => {
+      onUpdateFolder?.(id, { orderIndex: idx });
+    });
+  };
+
+  // v0.8.3: the Unfiled / Loose Notes section, extracted so it can render
+  // ABOVE or BELOW the folder sections (project's looseDocsPosition).
+  const renderLooseSection = () => {
+    // v0.8.3: resolved loose order in both modes (filters applied on top in
+    // normal mode, full scope in reorder mode).
+    const unfiledDocs = isReorderMode
+      ? bookLayout.looseDocs
+      : bookLayout.looseDocs.filter((d) => filteredDocs.some((fd) => fd.id === d.id));
+    if (unfiledDocs.length === 0 && folders.length > 0) return null;
+
+    return (
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          setDragOverFolderId('unfiled');
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+          setDragOverFolderId((prev) => (prev === 'unfiled' ? null : prev));
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOverFolderId(null);
+          let docIds: string[] = [];
+          try {
+            const json = e.dataTransfer.getData('application/json');
+            if (json) docIds = JSON.parse(json);
+          } catch {}
+          if (docIds.length === 0) {
+            const text = e.dataTransfer.getData('text/plain');
+            if (text) docIds = text.split(',').filter(Boolean);
+          }
+          if (docIds.length > 0 && onMoveDocument) {
+            docIds.forEach((id) => onMoveDocument(id, undefined));
+            setSelectedDocIds(new Set());
+            setIsSelectMode(false);
+          }
+        }}
+        className={`rounded-xl border overflow-hidden transition-all ${
+          dragOverFolderId === 'unfiled'
+            ? 'ring-2 ring-accent bg-accent/10'
+            : isDarkMode ? 'bg-[#141414]/80 border-neutral-800' : 'bg-white border-neutral-200 shadow-xs'
+        }`}
+      >
+        <div className={`px-5 py-3 flex items-center justify-between border-b ${
+          isDarkMode ? 'bg-neutral-900/40 border-neutral-800' : 'bg-neutral-50/70 border-neutral-200'
+        }`}>
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-neutral-400" />
+            <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+              Unfiled / Loose Notes
+            </h2>
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-neutral-200/70 dark:bg-neutral-800 text-neutral-500">
+              {unfiledDocs.length} {unfiledDocs.length === 1 ? 'file' : 'files'}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              onCreateDocument('blank');
+              onClose();
+            }}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
+              isDarkMode 
+                ? 'border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-200' 
+                : 'border-neutral-300 bg-white hover:bg-neutral-100 text-neutral-800'
+            }`}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Unfiled File</span>
+          </button>
+        </div>
+
+        <div className="divide-y divide-neutral-200 dark:divide-neutral-800/80">
+          {unfiledDocs.map((doc, docIdx) => (
+            <DocumentRow
+              key={doc.id}
+              doc={doc}
+              isActive={doc.id === activeDocumentId}
+              isSelected={selectedDocIds.has(doc.id)}
+              isSelectMode={isSelectMode}
+              selectedDocIds={selectedDocIds}
+              folders={folders}
+              onToggleSelect={() => {
+                setSelectedDocIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(doc.id)) next.delete(doc.id);
+                  else next.add(doc.id);
+                  return next;
+                });
+              }}
+              onSelect={() => {
+                onSelectDocument(doc.id);
+                onClose();
+              }}
+              onToggleFav={() => onToggleFavorite(doc.id)}
+              onDuplicate={() => onDuplicateDocument(doc)}
+              onDelete={() => onDeleteDocument(doc.id)}
+              onMove={(targetFolderId) => onMoveDocument(doc.id, targetFolderId)}
+              onUpdateStatus={(st) => onUpdateDocument?.(doc.id, { status: st })}
+              onExport={(fmt) => handleExport(doc, fmt)}
+              isDarkMode={isDarkMode}
+              reorderControls={isReorderMode ? {
+                onMoveUp: () => handleMoveDocInBook(doc.id, -1),
+                onMoveDown: () => handleMoveDocInBook(doc.id, 1),
+                isFirst: docIdx === 0,
+                isLast: docIdx === unfiledDocs.length - 1,
+              } : undefined}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div 
       id="start-menu-overlay"
@@ -358,7 +527,37 @@ export const StartMenu: React.FC<StartMenuProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap justify-center">
+                {/* v0.8.3: Export Book — chains the Mundus into one PDF/DOCX/EPUB in book order */}
+                <button
+                  id="btn-start-export-book"
+                  onClick={() => setIsExportBookOpen(true)}
+                  title="Export this Mundus as a single book file (PDF, DOCX or EPUB) in your book order"
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-all shadow-2xs ${
+                    isDarkMode 
+                      ? 'border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-200' 
+                      : 'border-neutral-300 bg-white hover:bg-neutral-100 text-neutral-800'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4" />
+                  <span>Export Book</span>
+                </button>
+                {/* v0.8.3: Reorder mode — arrange folders, documents and loose files; order = book order */}
+                <button
+                  id="btn-start-reorder"
+                  onClick={() => setIsReorderMode(!isReorderMode)}
+                  title="Reorder mode: arrange folders and documents — this order drives Mundus View and Export Book"
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-all shadow-2xs ${
+                    isReorderMode
+                      ? 'bg-accent text-white border-accent shadow-2xs'
+                      : isDarkMode 
+                        ? 'border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-200' 
+                        : 'border-neutral-300 bg-white hover:bg-neutral-100 text-neutral-800'
+                  }`}
+                >
+                  <ArrowUpDown className="w-4 h-4" />
+                  <span>{isReorderMode ? 'Reordering…' : 'Reorder'}</span>
+                </button>
                 {/* v0.7.93: backup this Mundus — moved here from the sidebar */}
                 <button
                   id="btn-start-backup-mundus"
@@ -441,7 +640,59 @@ export const StartMenu: React.FC<StartMenuProps> = ({
               </form>
             )}
 
-            {/* Filter Bar and View Mode Switcher */}
+            {/* v0.8.3: Reorder mode banner */}
+            {isReorderMode && (
+              <div id="reorder-banner" className={`p-4 rounded-xl border flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between ${
+                isDarkMode ? 'bg-neutral-900/80 border-accent/40' : 'bg-white border-accent/50 shadow-xs'
+              }`}>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <ArrowUpDown className="w-4 h-4 text-accent shrink-0" />
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold">Reorder mode</h3>
+                    <p className={`text-[11px] ${isDarkMode ? 'text-neutral-400' : 'text-neutral-500'}`}>
+                      Use the arrows on folders and files to arrange the book. This order is what Mundus View shows and what Export Book follows.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  <div className={`flex items-center gap-0.5 p-0.5 rounded-lg border ${isDarkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-neutral-100 border-neutral-300'}`}>
+                    <span className={`text-[10px] uppercase tracking-wider px-1.5 font-semibold ${isDarkMode ? 'text-neutral-400' : 'text-neutral-500'}`}>Loose files</span>
+                    <button
+                      id="btn-loose-position-top"
+                      onClick={() => onUpdateProject?.({ looseDocsPosition: 'top' })}
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
+                        loosePosition === 'top'
+                          ? isDarkMode ? 'bg-neutral-800 text-white shadow-2xs' : 'bg-white text-black shadow-2xs'
+                          : 'text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'
+                      }`}
+                    >
+                      Top
+                    </button>
+                    <button
+                      id="btn-loose-position-bottom"
+                      onClick={() => onUpdateProject?.({ looseDocsPosition: 'bottom' })}
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
+                        loosePosition === 'bottom'
+                          ? isDarkMode ? 'bg-neutral-800 text-white shadow-2xs' : 'bg-white text-black shadow-2xs'
+                          : 'text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'
+                      }`}
+                    >
+                      Bottom
+                    </button>
+                  </div>
+                  <button
+                    id="btn-reorder-done"
+                    onClick={() => setIsReorderMode(false)}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-neutral-900 text-white dark:bg-white dark:text-black cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Filter Bar and View Mode Switcher (hidden in reorder mode) */}
+            {!isReorderMode && (
             <div className={`p-4 rounded-xl border flex flex-col md:flex-row gap-3 items-center justify-between backdrop-blur-md ${
               isDarkMode ? 'bg-[#141414]/90 border-neutral-800' : 'bg-white/90 border-neutral-200 shadow-xs'
             }`}>
@@ -557,15 +808,25 @@ export const StartMenu: React.FC<StartMenuProps> = ({
                 </button>
               </div>
             </div>
+            )}
 
             {/* VIEW MODE 1: Hierarchical Folders View */}
             {viewMode === 'folders' ? (
               <div className="space-y-6">
-                {/* Each Folder Section */}
-                {folders.map((folder) => {
-                  const rawFolderDocs = documents.filter((d) => d.folderId === folder.id);
-                  const folderDocs = filteredDocs.filter((d) => d.folderId === folder.id);
+                {/* v0.8.3: loose files render on TOP when the project asks for it */}
+                {loosePosition === 'top' && renderLooseSection()}
+                {/* Each Folder Section (v0.8.3: resolved book order) */}
+                {bookLayout.folderGroups.map(({ folder, docs: scopeDocs }, groupIdx) => {
+                  const rawFolderDocs = scopeDocs;
+                  // v0.8.3: the folder view ALWAYS displays the resolved book
+                  // order (reorder mode shows the full scope; normal mode keeps
+                  // the active search/status filters on top of that order).
+                  const folderDocs = isReorderMode
+                    ? scopeDocs
+                    : scopeDocs.filter((d) => filteredDocs.some((fd) => fd.id === d.id));
                   const isCollapsed = !!collapsedFolders[folder.id];
+                  const isFirstFolder = groupIdx === 0;
+                  const isLastFolder = groupIdx === bookLayout.folderGroups.length - 1;
 
                   return (
                     <div 
@@ -661,6 +922,26 @@ export const StartMenu: React.FC<StartMenuProps> = ({
 
                         {/* Folder Header Actions */}
                         <div className="flex items-center gap-1.5 shrink-0">
+                          {isReorderMode && (
+                            <div className="flex items-center gap-0.5 mr-0.5">
+                              <button
+                                onClick={() => handleMoveFolderInBook(folder.id, -1)}
+                                disabled={isFirstFolder}
+                                title="Move folder up in book order"
+                                className="p-1 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white disabled:opacity-25 disabled:cursor-default cursor-pointer"
+                              >
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleMoveFolderInBook(folder.id, 1)}
+                                disabled={isLastFolder}
+                                title="Move folder down in book order"
+                                className="p-1 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white disabled:opacity-25 disabled:cursor-default cursor-pointer"
+                              >
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
                           <button
                             onClick={() => {
                               onCreateDocument('blank', folder.id);
@@ -700,7 +981,7 @@ export const StartMenu: React.FC<StartMenuProps> = ({
                       {/* Folder Content List */}
                       {!isCollapsed && (
                         <div className="divide-y divide-neutral-200 dark:divide-neutral-800/80">
-                          {folderDocs.map((doc) => (
+                          {folderDocs.map((doc, docIdx) => (
                             <DocumentRow
                               key={doc.id}
                               doc={doc}
@@ -728,6 +1009,12 @@ export const StartMenu: React.FC<StartMenuProps> = ({
                               onUpdateStatus={(st) => onUpdateDocument?.(doc.id, { status: st })}
                               onExport={(fmt) => handleExport(doc, fmt)}
                               isDarkMode={isDarkMode}
+                              reorderControls={isReorderMode ? {
+                                onMoveUp: () => handleMoveDocInBook(doc.id, -1),
+                                onMoveDown: () => handleMoveDocInBook(doc.id, 1),
+                                isFirst: docIdx === 0,
+                                isLast: docIdx === folderDocs.length - 1,
+                              } : undefined}
                             />
                           ))}
                           {folderDocs.length === 0 && (
@@ -745,109 +1032,8 @@ export const StartMenu: React.FC<StartMenuProps> = ({
                   );
                 })}
 
-                {/* Unfiled / Loose Notes Section */}
-                {(() => {
-                  const unfiledDocs = filteredDocs.filter((d) => !d.folderId || !folders.some(f => f.id === d.folderId));
-                  if (unfiledDocs.length === 0 && folders.length > 0) return null;
-
-                  return (
-                    <div 
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = 'move';
-                        setDragOverFolderId('unfiled');
-                      }}
-                      onDragLeave={(e) => {
-                        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-                        setDragOverFolderId((prev) => (prev === 'unfiled' ? null : prev));
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        setDragOverFolderId(null);
-                        let docIds: string[] = [];
-                        try {
-                          const json = e.dataTransfer.getData('application/json');
-                          if (json) docIds = JSON.parse(json);
-                        } catch {}
-                        if (docIds.length === 0) {
-                          const text = e.dataTransfer.getData('text/plain');
-                          if (text) docIds = text.split(',').filter(Boolean);
-                        }
-                        if (docIds.length > 0 && onMoveDocument) {
-                          docIds.forEach((id) => onMoveDocument(id, undefined));
-                          setSelectedDocIds(new Set());
-                          setIsSelectMode(false);
-                        }
-                      }}
-                      className={`rounded-xl border overflow-hidden transition-all ${
-                        dragOverFolderId === 'unfiled'
-                          ? 'ring-2 ring-accent bg-accent/10'
-                          : isDarkMode ? 'bg-[#141414]/80 border-neutral-800' : 'bg-white border-neutral-200 shadow-xs'
-                      }`}
-                    >
-                      <div className={`px-5 py-3 flex items-center justify-between border-b ${
-                        isDarkMode ? 'bg-neutral-900/40 border-neutral-800' : 'bg-neutral-50/70 border-neutral-200'
-                      }`}>
-                        <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-neutral-400" />
-                          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
-                            Unfiled / Loose Notes
-                          </h2>
-                          <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-neutral-200/70 dark:bg-neutral-800 text-neutral-500">
-                            {unfiledDocs.length} {unfiledDocs.length === 1 ? 'file' : 'files'}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => {
-                            onCreateDocument('blank');
-                            onClose();
-                          }}
-                          className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border transition-colors ${
-                            isDarkMode 
-                              ? 'border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-200' 
-                              : 'border-neutral-300 bg-white hover:bg-neutral-100 text-neutral-800'
-                          }`}
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Add Unfiled File</span>
-                        </button>
-                      </div>
-
-                      <div className="divide-y divide-neutral-200 dark:divide-neutral-800/80">
-                        {unfiledDocs.map((doc) => (
-                          <DocumentRow
-                            key={doc.id}
-                            doc={doc}
-                            isActive={doc.id === activeDocumentId}
-                            isSelected={selectedDocIds.has(doc.id)}
-                            isSelectMode={isSelectMode}
-                            selectedDocIds={selectedDocIds}
-                            folders={folders}
-                            onToggleSelect={() => {
-                              setSelectedDocIds((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(doc.id)) next.delete(doc.id);
-                                else next.add(doc.id);
-                                return next;
-                              });
-                            }}
-                            onSelect={() => {
-                              onSelectDocument(doc.id);
-                              onClose();
-                            }}
-                            onToggleFav={() => onToggleFavorite(doc.id)}
-                            onDuplicate={() => onDuplicateDocument(doc)}
-                            onDelete={() => onDeleteDocument(doc.id)}
-                            onMove={(targetFolderId) => onMoveDocument(doc.id, targetFolderId)}
-                            onUpdateStatus={(st) => onUpdateDocument?.(doc.id, { status: st })}
-                            onExport={(fmt) => handleExport(doc, fmt)}
-                            isDarkMode={isDarkMode}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
+                {/* v0.8.3: loose files below the folders (default position) */}
+                {loosePosition === 'bottom' && renderLooseSection()}
               </div>
             ) : (
               /* VIEW MODE 2: Flat List of All Documents */
@@ -1061,6 +1247,16 @@ export const StartMenu: React.FC<StartMenuProps> = ({
           />
         )}
       </main>
+
+      {/* v0.8.3: Export Book dialog (fixed overlay, safe-area padded) */}
+      <BookExportDialog
+        isOpen={isExportBookOpen}
+        onClose={() => setIsExportBookOpen(false)}
+        documents={documents}
+        folders={folders}
+        activeMundusProject={activeMundusProject}
+        isDarkMode={isDarkMode}
+      />
     </div>
   );
 };
@@ -1081,6 +1277,13 @@ interface DocumentRowProps {
   onMove: (targetFolderId: string | undefined) => void;
   onUpdateStatus?: (status: DocumentStatus) => void;
   onExport: (format: 'txt' | 'md' | 'html' | 'mundus' | 'pdf' | 'docx') => void;
+  // v0.8.3: shown only in Mundus View reorder mode (book order arrows)
+  reorderControls?: {
+    onMoveUp: () => void;
+    onMoveDown: () => void;
+    isFirst: boolean;
+    isLast: boolean;
+  };
   isDarkMode: boolean;
 }
 
@@ -1099,6 +1302,7 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
   onMove,
   onUpdateStatus,
   onExport,
+  reorderControls,
   isDarkMode
 }) => {
 
@@ -1124,6 +1328,30 @@ const DocumentRow: React.FC<DocumentRowProps> = ({
             : isDarkMode ? 'hover:bg-neutral-900/60' : 'hover:bg-neutral-50'
       }`}
     >
+      {/* v0.8.3: book-order arrows (reorder mode only) */}
+      {reorderControls && (
+        <div className="flex flex-col gap-0 shrink-0 self-center" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={reorderControls.onMoveUp}
+            disabled={reorderControls.isFirst}
+            title="Move up in book order"
+            aria-label="Move up in book order"
+            className="p-0.5 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white disabled:opacity-25 disabled:cursor-default cursor-pointer"
+          >
+            <ChevronUp className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={reorderControls.onMoveDown}
+            disabled={reorderControls.isLast}
+            title="Move down in book order"
+            aria-label="Move down in book order"
+            className="p-0.5 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white disabled:opacity-25 disabled:cursor-default cursor-pointer"
+          >
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* File Info (Left: Scene name above, words count & reading time below) */}
       <div 
         className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"

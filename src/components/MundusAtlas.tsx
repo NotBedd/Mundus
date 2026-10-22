@@ -160,13 +160,17 @@ export const MundusAtlas: React.FC<MundusAtlasProps> = ({
   };
 
   return (
-    <div className={`mundus-atlas-shell min-h-screen w-full flex flex-col transition-colors overflow-y-auto ${
+    <div className={`mundus-atlas-shell h-screen w-full flex flex-col transition-colors overflow-hidden ${
       isDarkMode ? 'bg-[#0a0a0a] text-neutral-100' : 'bg-[#f8f8f8] text-neutral-900'
     }`}>
-      {/* Top Utility Bar */}
+      {/* Top Utility Bar — v0.8.3: a fixed flex child (NOT sticky). The shell is
+          now a viewport-height container and the CONTENT below scrolls, so the
+          utility bar can never scroll away (on Android the document used to
+          scroll the whole shell, bar included, because min-h-screen grew the
+          shell and orphaned the sticky header's scrollport). */}
       <header className={`w-full px-6 py-4 flex items-center justify-between border-b shrink-0 ${
         isDarkMode ? 'border-neutral-800/80 bg-[#0f0f0f]/80' : 'border-neutral-200/90 bg-white/80'
-      } backdrop-blur-md sticky top-0 z-20`}>
+      } backdrop-blur-md z-20`}>
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 flex items-center justify-center shrink-0">
             <img 
@@ -249,7 +253,10 @@ export const MundusAtlas: React.FC<MundusAtlasProps> = ({
       </header>
 
       {/* Main Centered Hub Container */}
-      <main className="flex-1 w-full max-w-6xl mx-auto px-6 py-10 sm:py-16 flex flex-col items-center">
+      {/* v0.8.3: everything below the utility bar scrolls INSIDE the shell —
+          the bar itself stays pinned below the status bar. */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+      <main className="w-full max-w-6xl mx-auto px-6 py-10 sm:py-16 flex flex-col items-center">
         {/* Wind Rose Icon & Mundus Atlas Header */}
         <div className="flex flex-col items-center text-center mb-6 sm:mb-10">
           {/* Freestanding Wind Rose Icon styled after nautical compass */}
@@ -425,6 +432,7 @@ export const MundusAtlas: React.FC<MundusAtlasProps> = ({
           </div>
         </div>
       </main>
+      </div>
 
       {/* Modal: Create New Mundus */}
       {isCreateModalOpen && (
