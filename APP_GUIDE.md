@@ -10,6 +10,7 @@
 - [Lore Mode](#lore-mode)
 - [Map Mode](#map-mode)
 - [Mundus View](#mundus-view)
+- [Settings Menu](#settings)
 
 <br>
 
@@ -63,11 +64,27 @@ The next 4 buttons each have special features
 - The Images button lets you upload an image to include in the document where the cursor is at the moment of click. Added images can be resized to fixed intervals (small/medium/large) or manually, can be aligned in the page and have a captions text field to add a classic illustration-like caption
 - The Search button lets you search for words and phrases in the document and replace them with another text. The buttons to the right are options to enable case-sensitivity and "whole words" which you can use to search strings of letters inside bigger words or not
 - The Microphone button is used for the Speech-to-text feature. When you first click it the pill appearing in the bottom right will display "downloading ...", wait a moment for the model to download, after the text disappears you'll be left with the recording time and a button to stop. When the button is clicked, Whistle starts listening from your main microphone and transcribes what you say. This is especially useful to quickly put down an image of a scene you have in your head before it loses detail
-
 <img width="1043" height="93" alt="Screenshot From 2026-10-22 16-32-54" src="https://github.com/user-attachments/assets/f476e117-e5ab-492f-b0a5-be1ce4bcc346" />
 
+#### Right side (moving left to right, 3 buttons in bottom right last)
+- The first button with the sparkles automatically fixes gaps, broken page breaks and other pagination issues, try it first in case some of these appear
+- The next two button are to import and export documents from and to various formats including the native MUNDUS, HTML, PDF, DOCX and MD/TXT
+- Then there's the status button, it opens a menu to assign a status to the current document, choose between Draft, In Review or Complete, useful to keep track of your progress from Mundus View
+- After it is the Checkpoints button, click to open the menu, checkpoints can be made for the document with a note and can be previewed, this feature is useful to let you try out different versions of the same scene without needing to exit the app and use another app, checkpoints restore everything including images
+- The auto save button lets you choose between having auto save fire on every edit, at fixed intervals or never (not recommended)
+- Save button is self explanatory i hope
+- The Zen button enables Zen Mode which hides all the UI, it's useful to focus on the text alone if you need less distractions
+- The Focus button hides the text options toolbar leaving the top row available, honestly I don't see the use for this one after adding Zen Mode but it's present in many similar software so I assume some people like it
+- Review Spelling opens the spelling review drawer, it shows a list and the total number of the detected spelling errors in the document and offers buttons to quickly correct the errors or add the words to the dictionary
+- Timeline opens a popup menu that lets you assign a beginning date and a duration to the active document's scene in the story, this duration is then reflected in the Timeline in Lore Mode.
+- "In this scene" opens a drawer that has 3 tabs:
+   - The first one shows a list of the characters and codex entries that are detected in the document (detects by name only, whole words), you can open each to see more details, make edits or open in Codex
+   - The second one is essentially a compacted version of characters mode, you can scroll through all of the created characters and open them to make quick edits
+   - The third one is the same as the character ones but for codex entries, you can see open or edit all entries
+<img width="888" height="91" alt="Screenshot From 2026-10-22 18-06-51" src="https://github.com/user-attachments/assets/85a6b750-0938-45e3-ae3a-db7438c5e133" />
 
-
+ 
+     
 
 
 
