@@ -211,8 +211,9 @@ Congratulations!
 ## Credits
 
 ### Acknowledgements
+#### This project uses:
 
-- This project uses [Whistle](https://github.com/cactus-compute/needle) for the speech-to-text feature.
+- [Whistle](https://github.com/cactus-compute/needle) for the speech-to-text feature.
   If you use Whistle in your work, please cite it as requested by its authors:
   ```bibtex
   @misc{whistle_2026,
@@ -224,7 +225,19 @@ Congratulations!
     howpublished = {\url{https://github.com/cactus-compute/needle}}
   }
   
-- This project uses [Harper](https://github.com/Automattic/harper) for the autocorrect feature.
+- [Harper](https://github.com/Automattic/harper) for the autocorrect feature.
+- [Electron](https://www.electronjs.org/) (MIT License) for the desktop application framework.
+- [React](https://react.dev/) (MIT License) as the UI library.
+- [Vite](https://vitejs.dev/) (MIT License) for Build tooling.
+- [Capacitor](https://capacitorjs.com/) (MIT License) for the native Android runtime.
+- [Leaflet](https://leafletjs.com/) (BSD-2-Clause) for the interactive map markers.
+- [Firebase](https://firebase.google.com/) (Apache-2.0) for Cloud sync.
+- [pdf.js](https://mozilla.github.io/pdf.js/) (Apache-2.0) for PDF rendering.
+- [jsPDF](https://github.com/parallax/jsPDF) (MIT License) for PDF generation.
+- [mammoth.js](https://github.com/mwilliamson/mammoth.js) (BSD-2-Clause) for Word document conversion.
+- [docx](https://github.com/dolanmiu/docx) (MIT License) for Word document generation.
+- [Tailwind CSS](https://tailwindcss.com/) (MIT License) for the Styling framework.
+- [Lucide](https://lucide.dev/) (ISC License) for Icons.
 
 ### Other Informations
 - This project was developed with the help of AI tools, mainly Google AI Studio and z.ai's GLM Agent chat
