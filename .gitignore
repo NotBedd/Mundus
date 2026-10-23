@@ -22,3 +22,6 @@ Thumbs.db
 .env*
 !.env.example
 firebase-applet-config.json
+*.keystore
+*.jks
+keystore.properties
