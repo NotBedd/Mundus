@@ -19,6 +19,21 @@ declare module '*.wasm?init' {
 // therefore only need types for the glue's public API. The full set of
 // `__wbg_*` / `__wbindgen_*` host-import shims is intentionally not
 // enumerated — grammarEngine.ts accesses them through an index signature.
+// v0.8.61: nspell — pure-JS Hunspell engine used for the non-English
+// spellcheck dictionaries (Spanish/French/Italian/German). The package ships
+// no typings, so declare the small surface we use.
+declare module 'nspell' {
+  interface NspellInstance {
+    spell(word: string): boolean;
+    suggest(word: string): string[];
+    word(): string;
+    add(word: string): void;
+    remove(word: string): void;
+  }
+  function nspell(aff: string, dic: string): NspellInstance;
+  export default nspell;
+}
+
 declare module 'harper-wasm/harper_wasm_bg.js' {
   export interface WasmSpan {
     start: number;

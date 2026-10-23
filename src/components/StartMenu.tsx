@@ -35,6 +35,7 @@ import { DoubleClickDeleteButton } from './DoubleClickDeleteButton';
 import { WindRoseLogo } from './WindRoseLogo';
 import type { NovelDocument, DocumentStatus, Folder, MundusProject } from '../types';
 import { exportToMarkdown, exportToPdf, exportToDocx, exportToMundus, exportToHtml } from '../lib/exportUtils';
+import { downloadBlob } from '../lib/download';
 import { adjacentSwapReindex, resolveBookLayout } from '../lib/bookOrder';
 import { BookExportDialog } from './BookExportDialog';
 
@@ -284,14 +285,8 @@ export const StartMenu: React.FC<StartMenuProps> = ({
     const ext = 'txt';
 
     const blob = new Blob([content], { type: `${mime};charset=utf-8` });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${doc.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // v0.8.61: shared delivery — Android WebView ignores anchor downloads.
+    void downloadBlob(blob, `${doc.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.${ext}`, mime);
   };
 
   /** Move a document one slot up/down within its book scope (folder or loose). */

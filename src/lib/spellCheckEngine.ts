@@ -1,6 +1,190 @@
 // Word-style Spell Check Engine for Mundus
 // Provides real-time spellcheck, red wavy underline styling, suggestions, and comprehensive dictionary integration
+// v0.8.61: MULTI-LANGUAGE — English keeps the original fast in-memory wordlist
+// engine; Spanish/French/Italian/German are checked through real Hunspell
+// dictionaries (the dictionary-* packages, the same dictionary data Chrome
+// ships) loaded ONE AT A TIME via lazy chunks (src/lib/dicts/).
+// v0.8.62 ENGINE SWAP: nspell is GONE. Its constructor eagerly expands every
+// affix rule for every stem — with the Italian dictionary (3,233 rules ×
+// ~95k stems + continuation classes) that hung the main thread for MINUTES
+// (measured >120 s on a desktop CPU; the phone froze completely — the
+// "extreme lag" report). The engine is now REAL HUNSPELL compiled to WASM
+// (hunspell-asm): the same Italian dictionary constructs in ~95 ms, a
+// 400-word scan costs ~3 ms, and suggest("tempxsta") correctly returns
+// "tempesta". Rules are applied lazily per lookup, exactly like Chrome.
 import englishWords from 'an-array-of-english-words';
+import { getSpellLanguageSetting } from './spellLanguages';
+import type { Hunspell, HunspellFactory } from 'hunspell-asm';
+
+// ---------------------------------------------------------------------------
+// v0.8.62 language state — one dictionary in memory at a time
+// ---------------------------------------------------------------------------
+
+let currentLang = 'en';            // language whose checks are ACTIVE right now
+let hunspell: Hunspell | null = null;
+let loadingLang: string | null = null; // dictionary being fetched (async)
+let dictVersion = 0;               // bumped when the active dictionary changes
+const dictReadyListeners = new Set<(version: number) => void>();
+
+// Real-Hunspell WASM runtime (hunspell-asm). The module is imported lazily so
+// the ~570 KB WASM blob stays out of the initial bundle; the browser preamble
+// embeds the binary as a data URI, so no extra fetch configuration is needed.
+let factoryPromise: Promise<HunspellFactory> | null = null;
+// Virtual FS paths of the CURRENTLY mounted aff/dic files (unmounted on switch).
+let mountedPaths: string[] = [];
+// Monotonic token guarding against stale async dictionary loads winning the
+// race when the user switches languages quickly.
+let loadToken = 0;
+// v0.8.62: verdict cache for the Hunspell lookups. isWordValid runs for every
+// word of the document on every (debounced) rescan; Hunspell lookups are fast
+// (~µs each) but a 50k-word novel re-checking 50k words still adds up. The
+// cache holds only the HUNSPELL verdict (never the custom/ignored words, which
+// are checked before it and can change independently). Cleared when the active
+// dictionary changes; hard-capped so a pathological document cannot balloon it.
+const validityCache = new Map<string, boolean>();
+const VALIDITY_CACHE_CAP = 30000;
+
+function ensureFactory(): Promise<HunspellFactory> {
+  if (!factoryPromise) {
+    factoryPromise = (async () => {
+      const mod = (await import('hunspell-asm')) as typeof import('hunspell-asm');
+      return mod.loadModule();
+    })();
+  }
+  return factoryPromise;
+}
+
+/** Cached Hunspell verdict for one word (false-safe around dispose races). */
+function hunspellSpell(engine: Hunspell, word: string): boolean {
+  const cached = validityCache.get(word);
+  if (cached !== undefined) return cached;
+  let verdict = false;
+  try {
+    verdict = engine.spell(word) === true;
+  } catch {
+    verdict = false;
+  }
+  if (validityCache.size >= VALIDITY_CACHE_CAP) validityCache.clear();
+  validityCache.set(word, verdict);
+  return verdict;
+}
+
+const notifyDictReady = () => {
+  dictReadyListeners.forEach((cb) => {
+    try { cb(dictVersion); } catch { /* listener errors are non-fatal */ }
+  });
+};
+
+/** Language whose checks currently apply ('en' until a Hunspell dict loads). */
+export function getActiveSpellLanguage(): string {
+  return currentLang;
+}
+
+/** Bumped every time the loaded dictionary changes — subscribe to rescan. */
+export function getSpellDictionaryVersion(): number {
+  return dictVersion;
+}
+
+/** Subscribe to dictionary-ready events (returns an unsubscribe function). */
+export function onSpellDictionaryReady(cb: (version: number) => void): () => void {
+  dictReadyListeners.add(cb);
+  return () => dictReadyListeners.delete(cb);
+}
+
+/**
+ * Requests a language switch. English is instant (built-in wordlist); other
+ * languages load their Hunspell dictionary lazily — until it arrives
+ * `isWordValid` treats unknown words as VALID (no premature red squiggles)
+ * and `dictVersion` fires a rescan when loading completes.
+ *
+ * v0.8.62: dictionaries are parsed by REAL HUNSPELL in WASM. Construction is
+ * ~40–100 ms per language (vs nspell's multi-minute hang), so loading stays on
+ * the main thread without any perceptible freeze.
+ */
+export function requestSpellLanguage(lang: string): void {
+  if (!lang) lang = 'en';
+  if (lang === currentLang && (lang === 'en' || hunspell)) return;
+  if (lang === 'en') {
+    // Drop the Hunspell dictionary — back to the built-in English engine.
+    if (hunspell || loadingLang) {
+      loadToken += 1; // invalidate any in-flight dictionary load
+      disposeHunspell();
+      loadingLang = null;
+      currentLang = 'en';
+      dictVersion += 1;
+      notifyDictReady();
+    } else {
+      currentLang = 'en';
+    }
+    return;
+  }
+  if (loadingLang === lang) return;
+  loadingLang = lang;
+  const token = ++loadToken;
+  ;(async () => {
+    try {
+      const dictMod = lang === 'es'
+        ? await import('./dicts/dict-es')
+        : lang === 'fr'
+          ? await import('./dicts/dict-fr')
+          : lang === 'it'
+            ? await import('./dicts/dict-it')
+            : await import('./dicts/dict-de');
+      const factory = await ensureFactory();
+      // A newer request (or a switch back to English) superseded this load —
+      // drop everything this invocation mounted and bail out silently.
+      if (token !== loadToken) return;
+      const encoder = new TextEncoder();
+      // The previous language's instance + virtual files are released first so
+      // exactly ONE dictionary is ever resident (aff + dic + instance).
+      disposeHunspell();
+      const affPath = factory.mountBuffer(encoder.encode(dictMod.hunspell.aff), `${lang}.aff`);
+      const dicPath = factory.mountBuffer(encoder.encode(dictMod.hunspell.dic), `${lang}.dic`);
+      mountedPaths = [affPath, dicPath];
+      const instance = factory.create(affPath, dicPath);
+      if (token !== loadToken) {
+        // Superseded while creating — never adopt this instance.
+        try { instance.dispose(); } catch { /* already gone */ }
+        return;
+      }
+      hunspell = instance;
+      currentLang = lang;
+      loadingLang = null;
+      validityCache.clear();
+      dictVersion += 1;
+      notifyDictReady();
+    } catch (err) {
+      console.error('[spellCheckEngine] dictionary load failed for', lang, err);
+      // Graceful fallback: stay on the built-in English engine.
+      if (token === loadToken) {
+        disposeHunspell();
+        loadingLang = null;
+        currentLang = 'en';
+        validityCache.clear();
+        dictVersion += 1;
+        notifyDictReady();
+      }
+    }
+  })();
+}
+
+/** Frees the active Hunspell instance and its mounted virtual files. */
+function disposeHunspell(): void {
+  if (hunspell) {
+    try { hunspell.dispose(); } catch { /* already disposed */ }
+    hunspell = null;
+  }
+  if (mountedPaths.length && factoryPromise) {
+    const paths = mountedPaths;
+    mountedPaths = [];
+    void factoryPromise.then((factory) => {
+      for (const p of paths) {
+        try { factory.unmount(p); } catch { /* best effort */ }
+      }
+    }).catch(() => { /* factory never loaded — nothing to unmount */ });
+  }
+  validityCache.clear();
+}
 
 export interface MisspelledWordInfo {
   word: string;
@@ -176,12 +360,14 @@ const DICTIONARY_SET: Set<string> = new Set<string>();
 })();
 
 // Strip leading/trailing punctuation and normalize quotes/dashes
+// v0.8.61: Unicode-aware so accented words (español, français, perché, Größe)
+// survive cleaning instead of being stripped down to their ASCII skeleton.
 export function cleanWord(raw: string): string {
   if (!raw) return '';
   return raw
     .replace(/[‘’\u2018\u2019]/g, "'")
     .replace(/[“”\u201C\u201D]/g, '"')
-    .replace(/^[^a-zA-Z0-9']+|[^a-zA-Z0-9']+$/g, '')
+    .replace(/^[^\p{L}\p{N}']+|[^\p{L}\p{N}']+$/gu, '')
     .trim();
 }
 
@@ -220,6 +406,38 @@ export function isWordValid(
 
   // Check temporary ignored words in this session
   if (ignoredWords.some((w) => w.toLowerCase() === lower)) return true;
+
+  // ---------------------------------------------------------------------
+  // v0.8.61: NON-ENGLISH languages are checked via the loaded Hunspell
+  // dictionary (real Chrome dictionary data). While a dictionary is still
+  // loading, unknown words are treated as VALID so switching languages
+  // never flashes red squiggles everywhere; the version counter triggers a
+  // rescan the moment loading finishes.
+  // v0.8.62: lookups go through real Hunspell (WASM) with a verdict cache.
+  // ---------------------------------------------------------------------
+  if (currentLang !== 'en') {
+    if (!hunspell) return true; // dictionary still loading — be lenient
+    if (hunspellSpell(hunspell, cleaned)) return true;
+    if (hunspellSpell(hunspell, lower)) return true;
+    // Curly-apostrophe variants (l’avion typed with ’ instead of ')
+    if (lower.includes('’')) {
+      if (hunspellSpell(hunspell, lower.replace(/’/g, "'"))) return true;
+    }
+    // Romance elisions & apostrophe forms: l'avion, j'ai, aujourd'hui,
+    // dell'amico — try the part after the first apostrophe and the
+    // apostrophe-free contraction.
+    if (lower.includes("'")) {
+      const idx = lower.indexOf("'");
+      if (idx > 0 && idx < lower.length - 1) {
+        if (hunspellSpell(hunspell, lower.slice(idx + 1))) return true;
+        if (hunspellSpell(hunspell, lower.replace(/'/g, ''))) return true;
+      }
+    }
+    // English fallback for mixed-language snippets ("the", "and" inside a
+    // Spanish document are real words too).
+    if (DICTIONARY_SET.has(lower)) return true;
+    return false;
+  }
 
   // Direct fast comprehensive dictionary lookup
   if (DICTIONARY_SET.has(lower)) return true;
@@ -367,6 +585,41 @@ export function getSuggestions(word: string, customWords: string[] = []): string
   const cleaned = cleanWord(word);
   const lower = cleaned.toLowerCase();
 
+  // ---------------------------------------------------------------------
+  // v0.8.61: NON-ENGLISH — Hunspell suggestions (affix-rule aware, same
+  // quality as Word's own suggestions for these languages).
+  // v0.8.62: real Hunspell's ngram suggest — for "tempxsta" it now returns
+  // "tempesta" (nspell never got that far: it froze the app instead).
+  // ---------------------------------------------------------------------
+  if (currentLang !== 'en') {
+    const results: string[] = [];
+    if (hunspell) {
+      try {
+        const raw = hunspell.suggest(cleaned);
+        const lowerRaw = lower !== cleaned ? hunspell.suggest(lower) : [];
+        for (const r of [...(raw || []), ...(lowerRaw || [])]) {
+          const candidate = (r || '').trim();
+          if (candidate && !results.some((x) => x.toLowerCase() === candidate.toLowerCase())) {
+            results.push(candidate);
+          }
+          if (results.length >= 6) break;
+        }
+      } catch { /* suggest is best-effort */ }
+    }
+    // Custom dictionary near-matches (author's own names/terms)
+    for (const cw of customWords) {
+      if (results.length >= 6) break;
+      if (getLevenshteinDistance(lower, cw.toLowerCase()) <= 2 && !results.some((x) => x.toLowerCase() === cw.toLowerCase())) {
+        results.push(cw);
+      }
+    }
+    const isCapitalized = cleaned.length > 0 && cleaned[0] === cleaned[0].toUpperCase() && cleaned[0] !== cleaned[0].toLowerCase();
+    if (isCapitalized) {
+      return results.map((r) => r.charAt(0).toUpperCase() + r.slice(1));
+    }
+    return results;
+  }
+
   // 1. Direct typo lookup (instant high precision match)
   if (COMMON_TYPOS[lower]) {
     const typoFixes = COMMON_TYPOS[lower];
@@ -442,8 +695,15 @@ export function scanForMisspellings(
         .replace(/\u00a0/g, ' ')
     : rawPlainText.replace(/\u00a0/g, ' ');
 
+  // v0.8.63: the spell language is a plain manual choice (v0.8.61's auto
+  // detection was removed at the user's request). Resolve it BEFORE scanning
+  // and kick off the dictionary load when needed. While it loads,
+  // isWordValid stays lenient (no false red).
+  requestSpellLanguage(getSpellLanguageSetting());
+
   // Match words, including contractions (straight and curly apostrophes) and hyphenated tokens
-  const wordRegex = /[a-zA-Z][a-zA-Z0-9'’\u2019-]*/g;
+  // v0.8.61: Unicode-aware so accented languages are tokenized as real words.
+  const wordRegex = /[\p{L}][\p{L}\p{M}\p{N}'’\u2019-]*/gu;
   const wordMap = new Map<string, { count: number; contexts: string[] }>();
 
   // Extract sentences/lines for snippet context
@@ -568,7 +828,8 @@ export function saveSpellCheckEnabled(enabled: boolean): void {
 // Pure functions so they are unit-testable without a DOM.
 // ---------------------------------------------------------------------------
 
-const INLINE_WORD_CHAR = /[A-Za-z0-9'’\u2019-]/;
+// v0.8.61: Unicode-aware word character class (accented languages).
+const INLINE_WORD_CHAR = /[\p{L}\p{N}'’\u2019-]/u;
 
 export interface CaretWord {
   raw: string;    // the raw slice from the text node

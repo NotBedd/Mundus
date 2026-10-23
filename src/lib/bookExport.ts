@@ -6,11 +6,17 @@ import {
   buildPaperClone,
   appendPaperCloneToPdf,
   buildPrintableHtmlShell,
-  htmlToDocxParagraphs,
+  buildMundusDocxStyles,
+  buildMundusDocxSectionProperties,
+  buildDocxPageParagraphs,
+  cleanDocumentHtmlForPrint,
   showExportToast,
   showPdfReadyToast,
 } from './exportUtils';
 import { getPageFormatConfig } from './pageFormats';
+// v0.8.61: unified file delivery — Android WebView ignores anchor downloads
+// of blob: URLs, so book exports save natively (Downloads folder) there.
+import { downloadBlob, canUseNativeSave } from './download';
 
 /* ==================================================================
    v0.8.3 — Export Book: chain many documents (in Mundus View book
@@ -57,16 +63,9 @@ const escapeHtml = (str: string): string =>
 
 const xmlEscape = escapeHtml;
 
-/** Trigger a browser download for a generated blob (same pattern as exportToDocx). */
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+/** Trigger a download for a generated blob — v0.8.61: shared native-aware helper. */
+function deliverBlob(blob: Blob, filename: string, mime?: string): void {
+  void downloadBlob(blob, filename, mime);
 }
 
 /* ------------------------------------------------------------------ */
@@ -125,11 +124,12 @@ function syntheticPaperDoc(contentHtml: string): NovelDocument {
 function buildBookPrintableHtml(chapters: NovelDocument[], options: BookExportOptions): string {
   const sections: string[] = [];
 
+  // v0.8.4: title page and chapter list are ALWAYS their own pages.
   if (options.includeTitlePage) {
-    sections.push(`<section>${buildTitlePageHtml(options.bookTitle, options.authorName)}</section>`);
+    sections.push(`<section style="page-break-after: always; break-after: page;">${buildTitlePageHtml(options.bookTitle, options.authorName)}</section>`);
   }
   if (options.includeToc && chapters.length > 0) {
-    sections.push(`<section>${buildTocPageHtml(chapters)}</section>`);
+    sections.push(`<section style="page-break-after: always; break-after: page;">${buildTocPageHtml(chapters)}</section>`);
   }
 
   chapters.forEach((doc, index) => {
@@ -139,7 +139,12 @@ function buildBookPrintableHtml(chapters: NovelDocument[], options: BookExportOp
       : '';
     const isLast = index === chapters.length - 1;
     const breakStyle = isLast ? '' : ' style="page-break-after: always; break-after: page;"';
-    sections.push(`<section${breakStyle}>${heading}${doc.content || `<p>${doc.plainText || ''}</p>`}</section>`);
+    // v0.8.4: run each chapter through the SAME print-cleaning pipeline as
+    // single-document PDF exports — it populates the visual-image portals
+    // (saved empty in content) with image + caption and strips editor
+    // chrome, so book PDFs carry images and match manual exports 1:1.
+    const chapterHtml = cleanDocumentHtmlForPrint(doc.content || '', doc.visualImages) || `<p>${doc.plainText || ''}</p>`;
+    sections.push(`<section${breakStyle}>${heading}${chapterHtml}</section>`);
   });
 
   return buildPrintableHtmlShell(sections.join('\n'), options.bookTitle, options.pageFormat);
@@ -195,12 +200,14 @@ async function exportBookToPdf(chapters: NovelDocument[], options: BookExportOpt
     if (options.includeToc && chapters.length > 0) units.push(syntheticPaperDoc(buildTocPageHtml(chapters)));
     units.push(...chapters);
 
+    let pageAdded = false; // v0.8.4: only the VERY first page reuses jsPDF's initial page
     for (let i = 0; i < units.length; i++) {
       const unit = units[i];
       const label = unit.title && unit.title !== 'Book Page' ? `"${unit.title}"` : `section ${i + 1} of ${units.length}`;
       showExportToast(`Rendering ${label}...`, 'loading', 600000);
       const clone = await buildPaperClone(unit, pageConfig);
-      await appendPaperCloneToPdf(pdf, clone);
+      await appendPaperCloneToPdf(pdf, clone, undefined, { firstPageAlreadyPresent: pageAdded });
+      pageAdded = true;
       clone.dispose();
     }
 
@@ -215,22 +222,29 @@ async function exportBookToPdf(chapters: NovelDocument[], options: BookExportOpt
     const pdfBlob = pdf.output('blob');
     const blobUrl = URL.createObjectURL(pdfBlob);
 
-    try {
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = sanitizeFilename(bookTitle, 'pdf');
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        if (a.parentNode) a.parentNode.removeChild(a);
-      }, 1000);
-    } catch (e) {}
+    // v0.8.61: on Android the WebView ignores anchor downloads — the PDF-Ready
+    // card below performs the native save/view. Web keeps instant download.
+    if (!canUseNativeSave()) {
+      try {
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = sanitizeFilename(bookTitle, 'pdf');
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          if (a.parentNode) a.parentNode.removeChild(a);
+        }, 1000);
+      } catch (e) {}
+    }
 
     showPdfReadyToast({
       fileName: sanitizeFilename(bookTitle, 'pdf'),
       blobUrl,
       docTitle: bookTitle,
+      // v0.8.61: blob for native delivery from the card buttons.
+      blob: pdfBlob,
+      mime: 'application/pdf',
     });
     return true;
   } catch (err: any) {
@@ -290,7 +304,8 @@ async function exportBookToDocx(chapters: NovelDocument[], options: BookExportOp
       paragraphs.push(new Paragraph({ children: [new PageBreak()] }));
     }
 
-    chapters.forEach((doc, index) => {
+    for (let index = 0; index < chapters.length; index++) {
+      const doc = chapters[index];
       if (options.includeChapterHeadings) {
         paragraphs.push(
           new Paragraph({
@@ -301,20 +316,27 @@ async function exportBookToDocx(chapters: NovelDocument[], options: BookExportOp
           })
         );
       }
-      paragraphs.push(...htmlToDocxParagraphs(doc.content || `<p>${doc.plainText}</p>`));
+      // v0.8.5: paginated converter — every virtual page boundary of the
+      // chapter becomes an explicit Word page break (same paper-clone
+      // pagination as the PDF path), portals populated from visualImages,
+      // remote images fetched and embedded, headings black.
+      const chapterParagraphs = await buildDocxPageParagraphs(doc, options.pageFormat ?? null);
+      paragraphs.push(...chapterParagraphs);
       if (index < chapters.length - 1) {
         paragraphs.push(new Paragraph({ children: [new PageBreak()] }));
       }
-    });
+    }
 
     const docxFile = new Document({
       title: bookTitle,
       creator: options.authorName?.trim() || 'Mundus Writing Studio',
-      sections: [{ properties: {}, children: paragraphs }],
+      styles: buildMundusDocxStyles(),
+      // v0.8.61: REAL page size + margins matching the app's paper pages.
+      sections: [{ properties: buildMundusDocxSectionProperties(options.pageFormat ?? null), children: paragraphs }],
     });
 
     const blob = await Packer.toBlob(docxFile);
-    downloadBlob(blob, sanitizeFilename(bookTitle, 'docx'));
+    deliverBlob(blob, sanitizeFilename(bookTitle, 'docx'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     showExportToast(`Saved "${sanitizeFilename(bookTitle, 'docx')}" successfully!`, 'success');
     return true;
   } catch (err: any) {
@@ -390,32 +412,86 @@ const IMAGE_EXT_TO_MIME: Record<string, string> = {
   webp: 'image/webp',
 };
 
-/** Extracts data-URL images into EPUB image assets, rewriting src attributes. */
-function collectEpubImages(html: string, chapterIndex: number): { html: string; assets: EpubImageAsset[] } {
+/**
+ * v0.8.4: extracts data-URL AND remote http(s) images into EPUB image
+ * assets, rewriting src attributes to the packaged relative href. Remote
+ * images are fetched and embedded — EPUB readers do not reliably load
+ * external URLs (most are offline/sandboxed), so packaging the bytes is
+ * the only way images actually show up. On fetch failure the remote src
+ * is kept as-is; unreadable data URLs drop the img (unchanged behavior).
+ */
+async function collectEpubImages(html: string, chapterIndex: number): Promise<{ html: string; assets: EpubImageAsset[] }> {
   const parsed = new DOMParser().parseFromString(html, 'text/html');
   const assets: EpubImageAsset[] = [];
   let imgSeq = 0;
 
-  parsed.body.querySelectorAll('img').forEach((img) => {
+  const imgEls = Array.from(parsed.body.querySelectorAll('img'));
+  for (const img of imgEls) {
     const src = img.getAttribute('src') || '';
-    const match = src.match(/^data:image\/([a-zA-Z0-9.+-]+);base64,(.+)$/s);
-    if (!match) return; // remote URLs stay as-is
-    try {
-      const extRaw = match[1].toLowerCase();
-      const ext = extRaw === 'jpeg' ? 'jpg' : extRaw;
-      const mediaType = IMAGE_EXT_TO_MIME[ext] || `image/${extRaw}`;
-      const binary = atob(match[2]);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      imgSeq += 1;
-      const href = `images/ch${chapterIndex + 1}_img${imgSeq}.${ext}`;
-      img.setAttribute('src', href);
-      assets.push({ id: `img-ch${chapterIndex + 1}-${imgSeq}`, href, mediaType, bytes });
-    } catch (e) {
-      // unreadable data URL — drop the img rather than corrupt the chapter
-      img.remove();
+    let bytes: Uint8Array | null = null;
+    let ext = '';
+    const dataMatch = src.match(/^data:image\/([a-zA-Z0-9.+-]+);base64,(.+)$/s);
+
+    if (dataMatch) {
+      try {
+        ext = dataMatch[1].toLowerCase();
+        bytes = Uint8Array.from(atob(dataMatch[2]), (ch) => ch.charCodeAt(0));
+      } catch (e) {
+        bytes = null;
+      }
+      if (!bytes || bytes.length === 0) {
+        img.remove(); // unreadable data URL — drop the img rather than corrupt the chapter
+        continue;
+      }
+    } else if (/^https?:\/\//i.test(src)) {
+      try {
+        const res = await fetch(src, { mode: 'cors', credentials: 'omit' });
+        if (res.ok) {
+          const blob = await res.blob();
+          bytes = new Uint8Array(await blob.arrayBuffer());
+          const mime = (blob.type || '').toLowerCase();
+          ext = mime.startsWith('image/') ? mime.slice(6).split(';')[0] : '';
+          if (!ext) {
+            const m = src.match(/\.(png|jpe?g|gif|bmp|svg|webp)(?:[?#]|$)/i);
+            ext = m ? m[1].toLowerCase() : 'png';
+          }
+        }
+      } catch (e) {
+        bytes = null;
+      }
+      if (!bytes || bytes.length === 0) continue; // keep the remote src as a graceful fallback
+    } else if (/^blob:/i.test(src)) {
+      // v0.8.61: same-session blob: URLs (images inserted this session) are
+      // fetchable — embed them like the DOCX pipeline does instead of
+      // dropping them. Dead blob: URLs still fail and keep the src as-is.
+      try {
+        const res = await fetch(src);
+        if (res.ok) {
+          const blob = await res.blob();
+          bytes = new Uint8Array(await blob.arrayBuffer());
+          const mime = (blob.type || '').toLowerCase();
+          ext = mime.startsWith('image/') ? mime.slice(6).split(';')[0] : '';
+          if (!ext) {
+            const m = src.match(/\.(png|jpe?g|gif|bmp|svg|webp)(?:[?#]|$)/i);
+            ext = m ? m[1].toLowerCase() : 'png';
+          }
+        }
+      } catch (e) {
+        bytes = null;
+      }
+      if (!bytes || bytes.length === 0) continue;
+    } else {
+      continue; // file: sources are session-bound; leave untouched
     }
-  });
+
+    const extRaw = ext || 'png';
+    const extNorm = extRaw === 'jpeg' ? 'jpg' : extRaw;
+    const mediaType = IMAGE_EXT_TO_MIME[extNorm] || `image/${extRaw}`;
+    imgSeq += 1;
+    const href = `images/ch${chapterIndex + 1}_img${imgSeq}.${extNorm}`;
+    img.setAttribute('src', href);
+    assets.push({ id: `img-ch${chapterIndex + 1}-${imgSeq}`, href, mediaType, bytes });
+  }
 
   return { html: parsed.body.innerHTML, assets };
 }
@@ -448,8 +524,11 @@ async function exportBookToEpub(chapters: NovelDocument[], options: BookExportOp
     for (let i = 0; i < chapters.length; i++) {
       const doc = chapters[i];
       const title = doc.title || 'Untitled Document';
-      const cleaned = doc.content || `<p>${doc.plainText || ''}</p>`;
-      const { html: withAssets, assets } = collectEpubImages(cleaned, i);
+      // v0.8.4: run the chapter through the same print-cleaning pipeline as
+      // PDF exports — populates the saved-empty visual-image portals with
+      // image + caption and strips editor chrome before packaging.
+      const cleaned = cleanDocumentHtmlForPrint(doc.content || '', doc.visualImages) || `<p>${doc.plainText || ''}</p>`;
+      const { html: withAssets, assets } = await collectEpubImages(cleaned, i);
       allAssets.push(...assets);
       const xhtmlBody = htmlFragmentToXhtml(withAssets);
       const chapterId = `chapter-${i + 1}`;
@@ -518,7 +597,7 @@ async function exportBookToEpub(chapters: NovelDocument[], options: BookExportOp
     );
 
     const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/epub+zip' });
-    downloadBlob(blob, sanitizeFilename(bookTitle, 'epub'));
+    deliverBlob(blob, sanitizeFilename(bookTitle, 'epub'), 'application/epub+zip');
     showExportToast(`Saved "${sanitizeFilename(bookTitle, 'epub')}" successfully!`, 'success');
     return true;
   } catch (err: any) {

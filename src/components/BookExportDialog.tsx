@@ -227,7 +227,7 @@ export const BookExportDialog: React.FC<BookExportDialogProps> = ({
   return (
     <div
       className="fixed inset-0 z-[70] flex items-start sm:items-center justify-center bg-black/60 backdrop-blur-[2px] p-4 overflow-y-auto"
-      style={{ paddingTop: 'max(1rem, var(--safe-area-inset-top, 0px), var(--mundus-safe-top, 0px))' }}
+      style={{ paddingTop: 'max(1rem, var(--mundus-safe-top-effective, 0px))' }}
     >
       <div className={`w-full max-w-lg rounded-2xl border p-5 shadow-2xl my-auto ${cardCls}`}>
         {/* Header */}

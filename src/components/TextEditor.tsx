@@ -67,7 +67,7 @@ import { SpellCheckReviewPanel } from './SpellCheckReviewPanel';
 import { GoogleFontModal } from './GoogleFontModal';
 import { SceneTimelineModal } from './lore/SceneTimelineModal';
 import { CURATED_GOOGLE_FONTS, loadGoogleFont, detectAndLoadFontsFromHtml, isValidGoogleFontItem, type GoogleFontItem } from '../data/googleFonts';
-import { scanForMisspellings, isWordValid, getSuggestions, extractWordAtCaret, shouldSuggestCaretWord, type MisspelledWordInfo } from '../lib/spellCheckEngine';
+import { scanForMisspellings, isWordValid, getSuggestions, extractWordAtCaret, shouldSuggestCaretWord, onSpellDictionaryReady, getActiveSpellLanguage, type MisspelledWordInfo } from '../lib/spellCheckEngine';
 import { ensureHarper, lintText, pickCaretLint, lintToSuggestion, adjustedRemoveSpan } from '../lib/grammarEngine';
 import { SttSession, assembleSttText, appendSttCommitted, finalizeDictationText, describeSttError } from '../lib/sttEngine';
 import { isAndroidApp } from '../lib/platform';
@@ -941,6 +941,13 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   // Debounced scan of text for misspelled words to eliminate typing latency
   const [misspellings, setMisspellings] = useState<MisspelledWordInfo[]>([]);
 
+  // v0.8.61: multi-language dictionaries load ASYNC (Hunspell chunks). The
+  // engine bumps a version and notifies subscribers when a dictionary arrives;
+  // subscribing here re-runs the scan below so red squiggles appear (or clear)
+  // the moment the correct dictionary becomes active.
+  const [spellDictEpoch, setSpellDictEpoch] = useState(0);
+  useEffect(() => onSpellDictionaryReady((v) => setSpellDictEpoch(v)), []);
+
   // v0.7.83: DOM-structure epoch. execCommand('font'|'fontSize'|'bold'|...) wraps
   // text nodes in new elements — a CHILD-LIST mutation that leaves plainText
   // untouched — and detaches the original text nodes the CSS Custom Highlight
@@ -978,7 +985,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [spellCheckEnabled, document.plainText, effectiveCustomWords, ignoredWords, showSpellCheckReview]);
+  }, [spellCheckEnabled, document.plainText, effectiveCustomWords, ignoredWords, showSpellCheckReview, spellDictEpoch]);
 
   // -----------------------------------------------------------------------
   // Inline autocorrect suggestion (v0.7.8)
@@ -2166,7 +2173,10 @@ export const TextEditor: React.FC<TextEditorProps> = ({
     void (async () => {
       // v0.7.94: on Android the keyboard's autocorrect covers this job — the
       // Harper WASM engine is never loaded and its grammar popups are off.
-      if (!ANDROID_APP) {
+      // v0.8.61: Harper is an ENGLISH grammar engine — for non-English
+      // documents skip it entirely and let the dictionary flow (now Hunspell
+      // for es/fr/it/de) supply the spelling suggestions instead.
+      if (!ANDROID_APP && getActiveSpellLanguage() === 'en') {
         const harperOk = await ensureHarper();
         if (!harperOk || runId !== harperSuggestionRunRef.current) return;
         if (!nodeAtCall.isConnected || nodeAtCall.nodeValue !== textAtCall) return;
@@ -2462,7 +2472,10 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   useEffect(() => {
     // v0.7.94: Android keyboards have autocorrect built in — never download
     // the Harper WASM module there.
+    // v0.8.61: also skip the warm-up while a non-English spell dictionary is
+    // active — Harper's suggestions are English-only and unused there.
     if (ANDROID_APP) return;
+    if (getActiveSpellLanguage() !== 'en') return;
     const warm = setTimeout(() => { void ensureHarper(); }, 1200);
     return () => clearTimeout(warm);
   }, []);
@@ -4127,7 +4140,10 @@ export const TextEditor: React.FC<TextEditorProps> = ({
                 </button>
 
                 {showDocStatusMenu && (
-                  <div className={`absolute top-full left-0 mt-1 w-36 rounded-lg border shadow-xl p-1 z-50 text-xs font-mono backdrop-blur-md ${
+                  <div
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchEnd={(e) => e.stopPropagation()}
+                    className={`absolute top-full left-0 mt-1 w-36 rounded-lg border shadow-xl p-1 z-50 text-xs font-mono backdrop-blur-md ${
                     isDarkMode ? 'bg-neutral-900 border-neutral-700 text-neutral-200' : 'bg-white border-neutral-200 text-neutral-800'
                   }`}>
                     <button
@@ -4229,6 +4245,18 @@ export const TextEditor: React.FC<TextEditorProps> = ({
 
                 {showExportMenu && (
                   <div
+                    // v0.8.62 ANDROID FIX (the missing piece of v0.8.61): this
+                    // MOBILE import/export popover was the ONLY menu left
+                    // without the outside-close insulation — its container has
+                    // no menu ref either, so the document-level 'mousedown'
+                    // outside-close handler treated every tap on an option as
+                    // "outside", closed the menu on the synthesized mousedown
+                    // and the option's click never fired ("import/export menu
+                    // options do nothing when clicked" on Android phones —
+                    // reproduced 1:1 with touch emulation). Same insulation as
+                    // the mobile status popover and the desktop popovers.
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchEnd={(e) => e.stopPropagation()}
                     className={`absolute top-full left-0 mt-1 w-52 max-w-[calc(100vw-2rem)] rounded-lg border shadow-xl p-1 z-50 text-xs font-mono backdrop-blur-md ${
                       isDarkMode ? 'bg-neutral-900 border-neutral-700 text-neutral-200' : 'bg-white border-neutral-200 text-neutral-800'
                     }`}
@@ -4747,6 +4775,10 @@ export const TextEditor: React.FC<TextEditorProps> = ({
                 {showImportMenu && (
                   <div
                     id="doc-import-menu-popover"
+                    // v0.8.61 ANDROID: same outside-close insulation as the
+                    // export menu — see the comment there.
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchEnd={(e) => e.stopPropagation()}
                     className={`absolute left-0 sm:right-0 sm:left-auto mt-1 w-52 rounded-lg border shadow-xl p-1 z-50 text-xs font-mono ${
                       isDarkMode ? 'bg-neutral-900 border-neutral-700 text-neutral-200' : 'bg-white border-neutral-200 text-neutral-800'
                     }`}
@@ -4850,6 +4882,13 @@ export const TextEditor: React.FC<TextEditorProps> = ({
                 {showExportMenu && (
                   <div
                     id="doc-export-menu-popover"
+                    // v0.8.61 ANDROID: the document-level 'mousedown' outside-close
+                    // handler fires on the synthesized mousedown of the SAME tap
+                    // that selects an option (the WebView fires it on finger-lift),
+                    // killing the menu before the click landed. Same fix as the
+                    // v0.8.2 Auto-Save popover: taps inside are insulated.
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchEnd={(e) => e.stopPropagation()}
                     className={`absolute left-0 sm:right-0 sm:left-auto mt-1 w-48 rounded-lg border shadow-xl p-1 z-50 text-xs font-mono ${
                       isDarkMode ? 'bg-neutral-900 border-neutral-700 text-neutral-200' : 'bg-white border-neutral-200 text-neutral-800'
                     }`}
@@ -4963,7 +5002,10 @@ export const TextEditor: React.FC<TextEditorProps> = ({
                 </button>
 
                 {showDocStatusMenu && (
-                  <div className={`absolute left-0 sm:right-0 sm:left-auto mt-1 w-36 rounded-lg border shadow-xl p-1 z-50 text-xs font-mono ${
+                  <div
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchEnd={(e) => e.stopPropagation()}
+                    className={`absolute left-0 sm:right-0 sm:left-auto mt-1 w-36 rounded-lg border shadow-xl p-1 z-50 text-xs font-mono ${
                     isDarkMode ? 'bg-neutral-900 border-neutral-700 text-neutral-200' : 'bg-white border-neutral-200 text-neutral-800'
                   }`}>
                     <button

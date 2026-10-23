@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
-import { SpellCheck, Plus, X, Check, BookOpen, AlertCircle } from 'lucide-react';
+import { SpellCheck, Plus, X, Check, BookOpen, AlertCircle, Languages } from 'lucide-react';
+import {
+  SPELL_LANGUAGES,
+  getSpellLanguageSetting,
+  setSpellLanguageSetting,
+} from '../lib/spellLanguages';
+import { requestSpellLanguage } from '../lib/spellCheckEngine';
 
 interface SpellCheckModalProps {
   isOpen: boolean;
@@ -24,6 +30,17 @@ export const SpellCheckModal: React.FC<SpellCheckModalProps> = ({
 }) => {
   const [newWord, setNewWord] = useState('');
   const [filterQuery, setFilterQuery] = useState('');
+  // v0.8.61: spell language selection. v0.8.63: manual only — the Auto
+  // (auto-detect) option was removed at the user's request. The actual
+  // dictionary load lives in spellCheckEngine; changing it here requests the
+  // switch immediately and the editor's rescan subscription does the rest.
+  const [langSetting, setLangSetting] = useState<string>(() => getSpellLanguageSetting());
+
+  const handleLanguageChange = (value: string) => {
+    setLangSetting(value);
+    setSpellLanguageSetting(value);
+    requestSpellLanguage(value);
+  };
 
   if (!isOpen) return null;
 
@@ -77,7 +94,7 @@ export const SpellCheckModal: React.FC<SpellCheckModalProps> = ({
           isDarkMode ? 'bg-neutral-900/60 border-neutral-800' : 'bg-neutral-50 border-neutral-200'
         }`}>
           <div>
-            <div className="text-xs font-semibold">English Spell Checking</div>
+            <div className="text-xs font-semibold">Spell Checking</div>
             <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 max-w-xs">
               Highlights misspelled words
             </div>
@@ -101,6 +118,46 @@ export const SpellCheckModal: React.FC<SpellCheckModalProps> = ({
               }`}
             />
           </button>
+        </div>
+
+        {/* v0.8.61: Spell Language — explicit choice. v0.8.63: the Auto
+            (auto-detect) option was removed at the user's request; English
+            uses the built-in engine, Spanish/French/Italian/German use real
+            Hunspell dictionaries (Chrome's own data) loaded one at a time. */}
+        <div className={`mt-4 p-4 rounded-xl border ${
+          isDarkMode ? 'bg-neutral-900/60 border-neutral-800' : 'bg-neutral-50 border-neutral-200'
+        }`}>
+          <div className="flex items-center gap-1.5 mb-1">
+            <Languages className="w-3.5 h-3.5 text-neutral-500" />
+            <label className="text-xs font-semibold">Dictionary Language</label>
+          </div>
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mb-3">
+            Harper grammar suggestions are English-only; spelling suggestions
+            work in every language.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {SPELL_LANGUAGES.map((lang) => {
+              const active = langSetting === lang.code;
+              return (
+                <button
+                  key={lang.code}
+                  type="button"
+                  onClick={() => handleLanguageChange(lang.code)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                    active
+                      ? isDarkMode
+                        ? 'bg-white text-neutral-900 border-white'
+                        : 'bg-neutral-900 text-white border-neutral-900'
+                      : isDarkMode
+                        ? 'bg-neutral-900 border-neutral-700 text-neutral-300 hover:bg-neutral-800'
+                        : 'bg-white border-neutral-300 text-neutral-700 hover:bg-neutral-100'
+                  }`}
+                >
+                  {lang.name}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Custom Excluded Words / Character Names */}
