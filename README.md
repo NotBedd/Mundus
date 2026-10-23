@@ -188,6 +188,12 @@ Congratulations!
 ### Android
 - Download and install the apk file (it might ask for permission as its not signed)
 
+### iPhone & iPad
+  WARNING: Configuring Firebase is HIGHLY recommended as the iPhone and iPad versions currently rely on remote and unreliable testing, I can't fully verify the local storage system
+- Open mundus-ipados.netlify.app in safari (should work on other browsers too but I can't confirm for now)
+- Click share -> add to homescreen
+- From now on ALWAYS open the app from the homescreen icon
+
 ## Updating
 
 **WINDOWS**
@@ -207,6 +213,13 @@ Congratulations!
 
 ### Android
 - Download and install the newer apk, it will ask to update, say yes (might also ask for permission again as its not signed)
+
+### iPhone & iPad
+  WARNING: Configuring Firebase is HIGHLY recommended as the iPhone and iPad versions currently rely on remote and unreliable testing, I can't fully verify the local storage system
+- Open mundus-ipados.netlify.app in safari (should work on other browsers too but I can't confirm for now)
+- Click share -> add to homescreen
+- From now on ALWAYS open the app from the homescreen icon
+- You can delete the old icon
 
 <br>
 
