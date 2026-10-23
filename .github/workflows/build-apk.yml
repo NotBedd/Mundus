@@ -70,12 +70,18 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
 
-      # --- NEW STEP: INJECT PERMANENT KEYSTORE ---
+      # --- INJECT PERMANENT KEYSTORE ---
       - name: Decode Keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > project/android/app/release.keystore
+          
+      # --- VERIFY KEYSTORE (Debug Step) ---
+      - name: Verify Keystore
+        run: |
+          ls -lh project/android/app/release.keystore
+          file project/android/app/release.keystore
 
-      # --- CHANGED STEP: BUILD RELEASE APK (fixes signature error) ---
+      # --- BUILD RELEASE APK ---
       - name: Build APK (release variant)
         working-directory: project/android
         env:
@@ -93,7 +99,7 @@ jobs:
           APK_PATHS=$(find project/android/app/build/outputs/apk -name '*.apk' | tr '\n' ' ')
           echo "paths=$APK_PATHS" >> "$GITHUB_OUTPUT"
 
-      # --- UNTOUCHED: YOUR PRIVATE DRAFT RELEASE UPLOAD ---
+      # --- ATTACH TO DRAFT RELEASE ---
       - name: Attach APK to the draft (only you can see it)
         if: ${{ inputs.attach_apk_to_draft }}
         env:
@@ -119,7 +125,7 @@ jobs:
           done
           echo "APK attached to draft '$RELEASE_NAME' (private to you)"
 
-      # --- UNTOUCHED: OPT-IN PUBLIC ARTIFACT ---
+      # --- OPT-IN PUBLIC ARTIFACT ---
       - name: Upload APK as public run artifact (opt-in)
         if: ${{ inputs.upload_public_artifact }}
         uses: actions/upload-artifact@v4
