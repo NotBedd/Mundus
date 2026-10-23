@@ -13,10 +13,23 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- v0.8.61: launch with a BLACK status bar instead of the theme's
+             fixed gray — src/lib/nativeSystemBars.ts syncs it to the app's
+             in-app theme (black in dark mode / white + dark icons in light
+             mode) as soon as the WebView is up. -->
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
+        <!-- v0.8.62: the launch/splash frame matches the app too (black bar,
+             light icons). Capacitor's BridgeActivity switches the activity to
+             AppTheme.NoActionBar; the JS sync (nativeSystemBars.ts) then keeps
+             both bars in step with the in-app theme. -->
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>

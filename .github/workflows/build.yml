@@ -1,19 +1,28 @@
-# Mundus release build pipeline (v0.7.97)
+# Mundus release build pipeline
 #
 # How it works:
-#   1. Push a tag named like the app version (e.g. v0.7.97) — or run manually
+#   1. Push a tag named like the app version (e.g. v0.8.62) — or run manually
 #      from the Actions tab (workflow_dispatch).
-#   2. Three fresh virtual machines (Windows / Linux / macOS) each install the
+#   2. Three virtual machines (Windows / Linux / macOS) each install the
 #      dependencies, build the app, and package native installers with
 #      electron-builder (targets configured in electron-builder.json).
-#   3. On a tag build, all installers are attached to a GitHub Release at
-#      github.com/<owner>/<repo>/releases — the permanent download page.
+#      A fourth job (ubuntu) builds the Android APK in the SAME run: it builds
+#      the web bundle, runs the Capacitor sync (npm run android:sync) and
+#      packages android/ with Gradle (assembleDebug — debug-signed, so the APK
+#      installs by sideloading; the Play Store would reject it, direct
+#      installation works fine).
+#   3. On a tag build, ALL installers AND the APK are attached to the GitHub
+#      Release at github.com/<owner>/<repo>/releases — the permanent download
+#      page. The APK job is deliberately non-fatal (continue-on-error): if
+#      Android ever fails, the desktop release still publishes and the failed
+#      APK job shows a red X on the run summary.
 #
 # Notes:
 #   - Public repos: unlimited free build minutes. Private repos: 2,000 min/month
-#     (one full run of this pipeline uses roughly 30-45 aggregate minutes).
+#     (one full run of this pipeline uses roughly 35-55 aggregate minutes).
 #   - Artifacts are UNSIGNED: Windows shows a one-time SmartScreen prompt
-#     ("More info -> Run anyway"); macOS needs right-click -> Open on first launch.
+#     ("More info -> Run anyway"); macOS needs right-click -> Open on first
+#     launch; the APK is the standard debug-signed build.
 
 name: Build & Release
 
@@ -77,9 +86,86 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  build-apk:
+    name: Build Android APK
+    # Intentionally non-fatal: if this job fails, the desktop release still
+    # publishes (the job just shows a red X on the run summary).
+    continue-on-error: true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Restore Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-mundus-v1
+          restore-keys: gradle-mundus-v1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web bundle and sync it into the Android project
+        run: npm run android:sync
+
+      - name: Verify synced web payload
+        run: |
+          test -f android/app/src/main/assets/public/index.html \
+            || { echo "::error::Capacitor sync produced no android/app/src/main/assets/public/index.html"; exit 1; }
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+
+      - name: Build APK (debug variant)
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Collect APK
+        run: |
+          mkdir -p apk-out
+          VERSION=$(node -p "require('./package.json').version")
+          found=""
+          for f in $(find android/app/build/outputs/apk -name '*.apk'); do
+            found=1
+            base=$(basename "$f")
+            if [ "$base" = "app-debug.apk" ]; then
+              cp "$f" "apk-out/Mundus-${VERSION}-debug.apk"
+            else
+              cp "$f" "apk-out/Mundus-${VERSION}-${base}"
+            fi
+          done
+          [ -n "$found" ] || { echo "::error::Gradle produced no APK"; exit 1; }
+          ls -lh apk-out
+
+      - name: Upload APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-android
+          path: apk-out/*
+          if-no-files-found: error
+          retention-days: 14
+
   release:
     name: Attach installers to GitHub Release
-    needs: build
+    needs: [build, build-apk]
     # Only publish a Release for tag pushes (manual runs just build artifacts)
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest

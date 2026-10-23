@@ -382,6 +382,24 @@ export interface ElectronStorageAPI {
 export interface MundusNativeAPI {
   /** Synchronous on purpose — writes a small JSON file and returns the result. */
   saveBackupFile: (fileName: string, base64: string) => string; // JSON: { ok, path? , error? }
+  /**
+   * v0.8.61: generic file delivery for exports (DOCX/PDF/HTML/MD/MUNDUS…).
+   * Writes into the public Downloads folder via MediaStore with the given
+   * MIME type. Returns JSON: { ok, path?, error? }.
+   */
+  saveFile?: (fileName: string, mime: string, base64: string) => string;
+  /**
+   * v0.8.61: writes into the app cache and opens the file through a
+   * FileProvider ACTION_VIEW intent (PDF viewer, Word, browser…).
+   * Returns JSON: { ok, error? }.
+   */
+  viewFile?: (fileName: string, mime: string, base64: string) => string;
+  /**
+   * v0.8.61: syncs the system status/navigation bar colors with the app
+   * theme — black bar + light icons in dark mode, white bar + dark icons in
+   * light mode. Fire-and-forget (no return value).
+   */
+  setSystemBarAppearance?: (isDark: boolean) => void;
 }
 
 declare global {

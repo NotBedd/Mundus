@@ -580,12 +580,34 @@ input[type="number"]:focus::-webkit-inner-spin-button {
    max() chain as a second source, so whichever mechanism reports
    first still yields exactly one status bar of padding.
    ============================================================ */
-#app-root {
-  padding-top: max(
+
+/* v0.8.5: one canonical "top safe area" variable consumed by every
+   rule below (and by BookExportDialog's inline style). Default chain
+   unchanged for browser/PWA/Electron. On the Android NATIVE shell
+   (html.mundus-native-android, set by main.tsx) the ONLY trusted
+   source is MainActivity's --mundus-safe-top, which v0.8.5 measures
+   from statusBars() alone:
+   - env(safe-area-inset-top) is EXCLUDED on native: Chromium maps it
+     to the same statusBars|displayCutout union that several OEM
+     tablets (Honor/Huawei pads) inflate far beyond the real status
+     bar, which produced a double-height blank band (user screenshot,
+     2944x1840 pad: ~200 device px measured vs ~95 px status bar).
+   - a 64px CAP converts any residual OEM inset-reporting bug into a
+     mild cosmetic extra instead of a broken UI; no real Android
+     status bar exceeds ~48 CSS px. */
+:root {
+  --mundus-safe-top-effective: max(
     env(safe-area-inset-top, 0px),
     var(--safe-area-inset-top, 0px),
     var(--mundus-safe-top, 0px)
   );
+}
+html.mundus-native-android {
+  --mundus-safe-top-effective: min(max(var(--mundus-safe-top, 0px), 0px), 64px);
+}
+
+#app-root {
+  padding-top: var(--mundus-safe-top-effective, 0px);
   padding-right: env(safe-area-inset-right, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   padding-left: env(safe-area-inset-left, 0px);
@@ -598,7 +620,7 @@ input[type="number"]:focus::-webkit-inner-spin-button {
    iOS never sets --mundus-safe-top, and --safe-area-inset-top only
    exists inside the Capacitor native shell. */
 .mundus-atlas-shell {
-  padding-top: max(var(--safe-area-inset-top, 0px), var(--mundus-safe-top, 0px));
+  padding-top: var(--mundus-safe-top-effective, 0px);
 }
 
 /* v0.8.3: the shell is a viewport-height, non-scrolling flex column
@@ -619,7 +641,7 @@ input[type="number"]:focus::-webkit-inner-spin-button {
    (md+) use the in-flow sidebar inside the already-padded #app-root. */
 @media (max-width: 767px) {
   #app-sidebar {
-    padding-top: max(var(--safe-area-inset-top, 0px), var(--mundus-safe-top, 0px));
+    padding-top: var(--mundus-safe-top-effective, 0px);
   }
 }
 
@@ -627,10 +649,10 @@ input[type="number"]:focus::-webkit-inner-spin-button {
    viewport-relative exception as the drawer. Pad the overlay and drop
    its floating nav buttons below the status bar. */
 #start-menu-overlay {
-  padding-top: max(var(--safe-area-inset-top, 0px), var(--mundus-safe-top, 0px));
+  padding-top: var(--mundus-safe-top-effective, 0px);
 }
 #start-menu-overlay > div.fixed.top-4 {
-  top: calc(1rem + max(var(--safe-area-inset-top, 0px), var(--mundus-safe-top, 0px)));
+  top: calc(1rem + var(--mundus-safe-top-effective, 0px));
 }
 
 /* Track the visible viewport inside in-browser Safari (toolbars

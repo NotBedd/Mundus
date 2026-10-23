@@ -34,3 +34,31 @@ export const isAndroidApp = (): boolean => {
   cached = /android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent || '' : '');
   return cached;
 };
+
+let cachedNativeShell: boolean | null = null;
+
+/**
+ * v0.8.5: TRUE only inside the Android Capacitor WebView (the native app).
+ * Deliberately does NOT fall back to the user agent: Chrome / installed
+ * Android PWAs must stay on the standard env(safe-area-inset-top) chain —
+ * only the native shell has MainActivity publishing --mundus-safe-top, and
+ * only there must the WebView's own env() be excluded (OEM cutout inflation,
+ * see index.css html.mundus-native-android).
+ */
+export const isAndroidNativeShell = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  if (cachedNativeShell !== null) return cachedNativeShell;
+  try {
+    const cap = (window as any).Capacitor;
+    cachedNativeShell = !!(
+      cap &&
+      typeof cap.isNativePlatform === 'function' &&
+      cap.isNativePlatform() &&
+      typeof cap.getPlatform === 'function' &&
+      cap.getPlatform() === 'android'
+    );
+  } catch {
+    cachedNativeShell = false;
+  }
+  return cachedNativeShell;
+};
