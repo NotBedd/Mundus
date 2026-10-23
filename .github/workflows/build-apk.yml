@@ -70,11 +70,22 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
 
-      - name: Build APK (debug variant)
+      # --- NEW STEP: INJECT PERMANENT KEYSTORE ---
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > project/android/app/release.keystore
+
+      # --- CHANGED STEP: BUILD RELEASE APK (fixes signature error) ---
+      - name: Build APK (release variant)
         working-directory: project/android
+        env:
+          KEYSTORE_FILE: release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Collect APK
         id: apk
@@ -82,6 +93,7 @@ jobs:
           APK_PATHS=$(find project/android/app/build/outputs/apk -name '*.apk' | tr '\n' ' ')
           echo "paths=$APK_PATHS" >> "$GITHUB_OUTPUT"
 
+      # --- UNTOUCHED: YOUR PRIVATE DRAFT RELEASE UPLOAD ---
       - name: Attach APK to the draft (only you can see it)
         if: ${{ inputs.attach_apk_to_draft }}
         env:
@@ -99,9 +111,6 @@ jobs:
             if [ -n "$OLD" ]; then
               gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$OLD" || true
             fi
-            # FIX: release asset uploads MUST go to uploads.github.com.
-            # The relative path repos/.../releases/$ID/assets only exists on the
-            # upload host — api.github.com returns 404 for it.
             gh api --method POST \
               -H "Content-Type: application/octet-stream" \
               --input "$f" \
@@ -110,6 +119,7 @@ jobs:
           done
           echo "APK attached to draft '$RELEASE_NAME' (private to you)"
 
+      # --- UNTOUCHED: OPT-IN PUBLIC ARTIFACT ---
       - name: Upload APK as public run artifact (opt-in)
         if: ${{ inputs.upload_public_artifact }}
         uses: actions/upload-artifact@v4
