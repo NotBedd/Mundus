@@ -159,7 +159,9 @@ Made to let you visualise your world:
 
 ## Installing
 
-Look below to figure out which file you want / need
+- Read below to figure out which file you want / need based on your operating system
+- Go to "Releases" (should be on the right side of this page on desktop and at the bottom on mobile) 
+- Look into the "Assets" and download the file you want
 
 **WINDOWS**:
 you have two options:
