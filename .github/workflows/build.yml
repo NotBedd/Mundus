@@ -7,22 +7,29 @@
 #      dependencies, build the app, and package native installers with
 #      electron-builder (targets configured in electron-builder.json).
 #      A fourth job (ubuntu) builds the Android APK in the SAME run: it builds
-#      the web bundle, runs the Capacitor sync (npm run android:sync) and
-#      packages android/ with Gradle (assembleDebug — debug-signed, so the APK
-#      installs by sideloading; the Play Store would reject it, direct
-#      installation works fine).
-#   3. On a tag build, ALL installers AND the APK are attached to the GitHub
-#      Release at github.com/<owner>/<repo>/releases — the permanent download
-#      page. The APK job is deliberately non-fatal (continue-on-error): if
-#      Android ever fails, the desktop release still publishes and the failed
-#      APK job shows a red X on the run summary.
+#      the web bundle, runs the Capacitor sync (npm run android:sync), decodes
+#      the permanent release keystore from repo secrets, and packages android/
+#      with Gradle (assembleRelease — signed with the real release key, so the
+#      APK is release-grade: installable, upgradeable, and Play-Store eligible).
+#   3. On a tag build, ALL installers AND the signed APK are attached to the
+#      GitHub Release at github.com/<owner>/<repo>/releases — the permanent
+#      download page. The APK is named Mundus_<tag>.apk (e.g. Mundus_v0.9.45.apk).
+#      The APK job is deliberately non-fatal (continue-on-error): if Android
+#      ever fails, the desktop release still publishes and the failed APK job
+#      shows a red X on the run summary.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   KEYSTORE_BASE64      base64-encoded release.keystore
+#   KEYSTORE_PASSWORD    keystore password
+#   KEY_ALIAS            key alias inside the keystore
+#   KEY_PASSWORD         key password
 #
 # Notes:
 #   - Public repos: unlimited free build minutes. Private repos: 2,000 min/month
 #     (one full run of this pipeline uses roughly 35-55 aggregate minutes).
-#   - Artifacts are UNSIGNED: Windows shows a one-time SmartScreen prompt
+#   - Desktop artifacts are UNSIGNED: Windows shows a one-time SmartScreen prompt
 #     ("More info -> Run anyway"); macOS needs right-click -> Open on first
-#     launch; the APK is the standard debug-signed build.
+#     launch. The APK is signed with the permanent release keystore.
 
 name: Build & Release
 
@@ -104,9 +111,10 @@ jobs:
           retention-days: 14
 
   build-apk:
-    name: Build Android APK
+    name: Build signed Android APK
     # Intentionally non-fatal: if this job fails, the desktop release still
-    # publishes (the job just shows a red X on the run summary).
+    # publishes (the job just shows a red X on the run summary). Remove this
+    # line if you want a broken APK to block the whole release.
     continue-on-error: true
     runs-on: ubuntu-latest
 
@@ -149,30 +157,52 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
 
-      - name: Build APK (debug variant)
+      # --- INJECT PERMANENT RELEASE KEYSTORE ---
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+
+      - name: Verify Keystore
+        run: |
+          ls -lh android/app/release.keystore
+          file android/app/release.keystore
+
+      # --- BUILD SIGNED RELEASE APK ---
+      - name: Build APK (release variant)
         working-directory: android
+        env:
+          KEYSTORE_FILE: release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Collect APK
+      - name: Collect signed APK
         run: |
           mkdir -p apk-out
-          VERSION=$(node -p "require('./package.json').version")
+
+          # Name the APK after the tag (e.g. v0.9.45 -> Mundus_v0.9.45.apk).
+          # Manual workflow_dispatch runs aren't tied to a tag, so fall back to
+          # the package.json version; the release job only publishes on tags.
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            LABEL="$GITHUB_REF_NAME"
+          else
+            LABEL="v$(node -p "require('./package.json').version")"
+          fi
+          echo "APK label: $LABEL"
+
           found=""
-          for f in $(find android/app/build/outputs/apk -name '*.apk'); do
+          # Only grab release (signed) output, ignore anything debug
+          for f in $(find android/app/build/outputs/apk/release -name '*.apk'); do
             found=1
-            base=$(basename "$f")
-            if [ "$base" = "app-debug.apk" ]; then
-              cp "$f" "apk-out/Mundus-${VERSION}-debug.apk"
-            else
-              cp "$f" "apk-out/Mundus-${VERSION}-${base}"
-            fi
+            cp "$f" "apk-out/Mundus_${LABEL}.apk"
           done
-          [ -n "$found" ] || { echo "::error::Gradle produced no APK"; exit 1; }
+          [ -n "$found" ] || { echo "::error::Gradle produced no signed release APK"; exit 1; }
           ls -lh apk-out
 
-      - name: Upload APK as workflow artifact
+      - name: Upload signed APK as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: installers-android
