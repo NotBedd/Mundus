@@ -171,11 +171,13 @@ you have two options:
 
 Congratulations, you are done!
 
-**LINUX**:
+**LINUX (rpm & deb)**:
 you have two options:
 
 1. The "AppImage" runs the app inside the folder you place it in and keeps all data there, you can move it around as you like
 2. The "deb"/"rpm" will install the app on the pc fully like others do, it'll store data in the default programs folder, create its own shortcut in the start menu etc
+   - If you use Fedora or other Red Hat distros pick the rpm file
+   - If you use Ubuntu, Debian, Mint or other Debian-based distros pick the deb file
 
 Congratulations, you are done!
 
