@@ -1,0 +1,297 @@
+# Mundus full draft build pipeline (private)
+#
+# Same idea as build-apk.yml — you upload a prepared zip (with the web payload
+# already synced into android/) to a PRIVATE DRAFT release, run this workflow
+# manually, and it attaches every built artifact (Windows / macOS / Linux
+# installers + signed APK) to that same draft. Nothing is published.
+#
+# Differences from build.yml:
+#   - Source comes from a zip attached to a draft release (not from checkout/tag)
+#   - Runs on workflow_dispatch only — no tag, so no public release is created
+#   - APK is always signed (release keystore), never debug
+#
+# Required secrets: KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+#
+# Caveat: workflow artifacts on a public repo are readable by anyone with
+#   read access to the repo. The final download (the draft release) is private;
+#   the intermediate artifacts are just how the jobs hand files to the attach
+#   job and auto-expire after 14 days.
+
+name: Build full release from draft zip (private)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: 'Exact title of your DRAFT release (must be a draft, not published)'
+        required: true
+        type: string
+      zip_name:
+        description: 'Exact name of the zip asset attached to the draft'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────
+  # Desktop installers (Windows / Linux / macOS), built from the zip
+  # ─────────────────────────────────────────────────────────────────────
+  build:
+    name: Desktop (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Download zip from draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NAME: ${{ inputs.release_name }}
+          ASSET: ${{ inputs.zip_name }}
+        run: |
+          ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+                --jq '.[] | select(.draft and .name == env.RELEASE_NAME) | .id' | head -n1)
+          [ -n "$ID" ] || { echo "::error::No DRAFT release titled '$RELEASE_NAME' found. Create it (do NOT publish) and attach the zip."; exit 1; }
+          ASSET_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/$ID/assets" \
+                     --jq '.[] | select(.name == env.ASSET) | .id')
+          [ -n "$ASSET_ID" ] || { echo "::error::'$ASSET' not attached to the draft"; exit 1; }
+          curl --fail -sSL \
+               -H "Authorization: token $GH_TOKEN" \
+               -H "Accept: application/octet-stream" \
+               -o "$ASSET" \
+               "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID"
+          ls -lh "$ASSET"
+
+      - name: Extract zip and locate project root
+        shell: bash
+        run: |
+          mkdir -p project
+          if command -v unzip >/dev/null 2>&1; then
+            unzip -q "${{ inputs.zip_name }}" -d project
+          elif command -v 7z >/dev/null 2>&1; then
+            7z x "${{ inputs.zip_name }}" -oproject >/dev/null
+          else
+            echo "::error::Neither unzip nor 7z is available on this runner"
+            exit 1
+          fi
+          if [ -f project/package.json ] && [ -d project/android ]; then
+            ROOT=project
+          else
+            ROOT=""
+            for pj in $(find project -maxdepth 3 -name package.json); do
+              d=$(dirname "$pj")
+              if [ -d "$d/android" ]; then ROOT="$d"; break; fi
+            done
+          fi
+          test -n "$ROOT" || { echo "::error::Could not find project root (package.json + android/)"; exit 1; }
+          echo "ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "Project root: $ROOT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ env.ROOT }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.ROOT }}
+        run: npm ci
+
+      - name: Build app (web + electron main)
+        working-directory: ${{ env.ROOT }}
+        run: npm run build
+
+      - name: Install Arch packaging tools (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libarchive-tools zstd fakeroot
+
+      - name: Package native installers
+        working-directory: ${{ env.ROOT }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --publish never
+
+      - name: List built installers (debug)
+        shell: bash
+        working-directory: ${{ env.ROOT }}
+        run: ls -la release/ || true
+
+      - name: Upload installers as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          path: |
+            ${{ env.ROOT }}/release/*.exe
+            ${{ env.ROOT }}/release/*.dmg
+            ${{ env.ROOT }}/release/*.zip
+            ${{ env.ROOT }}/release/*.AppImage
+            ${{ env.ROOT }}/release/*.deb
+            ${{ env.ROOT }}/release/*.rpm
+            ${{ env.ROOT }}/release/*.pacman
+            ${{ env.ROOT }}/release/*.pkg.tar.*
+          if-no-files-found: error
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Signed Android APK, built from the same zip
+  # ─────────────────────────────────────────────────────────────────────
+  build-apk:
+    name: Signed Android APK
+    # Non-fatal: if this fails, desktop assets still attach to the draft.
+    # Re-run the failed job to retry the APK (attach job will re-run too).
+    continue-on-error: true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download zip from draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NAME: ${{ inputs.release_name }}
+          ASSET: ${{ inputs.zip_name }}
+        run: |
+          ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+                --jq '.[] | select(.draft and .name == env.RELEASE_NAME) | .id' | head -n1)
+          [ -n "$ID" ] || { echo "::error::No DRAFT release titled '$RELEASE_NAME' found."; exit 1; }
+          ASSET_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/$ID/assets" \
+                     --jq '.[] | select(.name == env.ASSET) | .id')
+          [ -n "$ASSET_ID" ] || { echo "::error::'$ASSET' not attached to the draft"; exit 1; }
+          curl --fail -sSL \
+               -H "Authorization: token $GH_TOKEN" \
+               -H "Accept: application/octet-stream" \
+               -o "$ASSET" \
+               "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID"
+          ls -lh "$ASSET"
+
+      - name: Extract zip and locate project root
+        run: |
+          mkdir -p project
+          unzip -q "${{ inputs.zip_name }}" -d project
+          if [ -f project/package.json ] && [ -d project/android ]; then
+            ROOT=project
+          else
+            ROOT=""
+            for pj in $(find project -maxdepth 3 -name package.json); do
+              d=$(dirname "$pj")
+              if [ -d "$d/android" ]; then ROOT="$d"; break; fi
+            done
+          fi
+          test -n "$ROOT" || { echo "::error::Could not find project root (package.json + android/)"; exit 1; }
+          echo "ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "Project root: $ROOT"
+
+      - name: Fail fast on unsynced zips
+        run: |
+          test -f "$ROOT/android/app/src/main/assets/public/index.html" \
+            || { echo "::error::Zip has no built web payload under android/. Run 'npm run android:sync' before packing."; exit 1; }
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+
+      - name: Restore Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-mundus-v1
+          restore-keys: gradle-mundus-v1
+
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "$ROOT/android/app/release.keystore"
+          ls -lh "$ROOT/android/app/release.keystore"
+          file "$ROOT/android/app/release.keystore"
+
+      - name: Build APK (release variant)
+        working-directory: ${{ env.ROOT }}/android
+        env:
+          KEYSTORE_FILE: release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Collect signed APK
+        run: |
+          mkdir -p apk-out
+          VERSION=$(jq -r '.version' "$ROOT/package.json")
+          echo "APK version from package.json: $VERSION"
+          found=""
+          for f in $(find "$ROOT/android/app/build/outputs/apk/release" -name '*.apk'); do
+            found=1
+            cp "$f" "apk-out/Mundus_v${VERSION}.apk"
+          done
+          [ -n "$found" ] || { echo "::error::Gradle produced no signed release APK"; exit 1; }
+          ls -lh apk-out
+
+      - name: Upload signed APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-android
+          path: apk-out/*
+          if-no-files-found: error
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Attach everything to the same (still-draft) release
+  # ─────────────────────────────────────────────────────────────────────
+  attach-to-draft:
+    name: Attach all files to draft
+    needs: [build, build-apk]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all built files
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List files to attach
+        run: |
+          if [ -z "$(ls -A release-assets 2>/dev/null)" ]; then
+            echo "::error::No artifacts downloaded — nothing to attach"
+            exit 1
+          fi
+          ls -lh release-assets/
+
+      - name: Attach to draft (replace same-name assets)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NAME: ${{ inputs.release_name }}
+        run: |
+          ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+                --jq '.[] | select(.draft and .name == env.RELEASE_NAME) | .id' | head -n1)
+          [ -n "$ID" ] || { echo "::error::No DRAFT release titled '$RELEASE_NAME' found. Keep it a draft (do NOT publish) and match the title exactly."; exit 1; }
+          echo "Draft release id: $ID"
+          for f in release-assets/*; do
+            NAME=$(basename "$f")
+            OLD=$(gh api "repos/$GITHUB_REPOSITORY/releases/$ID/assets" \
+                  --jq ".[] | select(.name == \"$NAME\") | .id" | head -n1)
+            if [ -n "$OLD" ]; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$OLD" || true
+            fi
+            gh api --method POST \
+              -H "Content-Type: application/octet-stream" \
+              --input "$f" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$ID/assets?name=$NAME" \
+              --jq '"Attached: " + .name + " (" + (.size|tostring) + " bytes)"'
+          done
+          echo "All files attached to draft '$RELEASE_NAME' (private to you)"
