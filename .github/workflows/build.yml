@@ -66,11 +66,26 @@ jobs:
       - name: Build app (web + electron main)
         run: npm run build
 
+      # FIXED: package is libarchive-tools (provides bsdtar), not "bsdtar".
+      # zstd + fakeroot are cheap insurance for the pacman target.
+      - name: Install Arch packaging tools (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libarchive-tools zstd fakeroot
+
       - name: Package native installers
         env:
           # Skip code-signing identity lookup (no certs in CI by design)
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder --publish never
+
+      # NEW: shows exactly what was produced — invaluable if a pattern ever
+      # stops matching (e.g. electron-builder changes a filename).
+      - name: List built installers (debug)
+        shell: bash
+        run: ls -la release/ || true
 
       - name: Upload installers as workflow artifacts
         uses: actions/upload-artifact@v4
@@ -83,6 +98,8 @@ jobs:
             release/*.AppImage
             release/*.deb
             release/*.rpm
+            release/*.pacman
+            release/*.pkg.tar.*
           if-no-files-found: error
           retention-days: 14
 
