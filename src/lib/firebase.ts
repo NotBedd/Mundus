@@ -29,6 +29,8 @@ import {
 import type { NovelDocument, Folder, DocumentSnapshot, Character, MundusProject, GoogleFontItem, CustomFont } from '../types';
 import type { FontPrefs } from './fontPrefs';
 import type { TargetBarPrefs } from './targetProgress';
+import type { MapMarkerStylePrefs, MapMarkerStyle } from './markerStyle';
+import type { MarkerIconLibrarySnapshot } from './markerIconLibrary';
 import { saveLocalSnapshot, getLocalSnapshots, deleteLocalSnapshot } from './syncManager';
 
 export const DEFAULT_AUTHOR_ID = 'author';
@@ -863,6 +865,96 @@ export async function saveUserTargetBarPrefs(userId: string, prefs: TargetBarPre
     }, { merge: true });
   } catch (error) {
     console.error('Failed to save target-bar preference to Firestore:', error);
+  }
+}
+
+// Map marker visual style sync: /users/{userId}/settings/mapMarkerPrefs (v0.8.64)
+// 'pin' (classic) vs 'icon' (marker IS the selected icon). Last-write-wins via
+// updatedAt — the device that toggled most recently wins on every device.
+export async function fetchUserMarkerStylePrefs(userId: string): Promise<Partial<MapMarkerStylePrefs> | null> {
+  if (!isFirebaseConfigured || !userId || userId === 'guest') return null;
+  try {
+    const ref = doc(db, 'users', userId, 'settings', 'mapMarkerPrefs');
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const data = snap.data();
+      const out: Partial<MapMarkerStylePrefs> = {};
+      if (data.markerStyle === 'pin' || data.markerStyle === 'icon') out.markerStyle = data.markerStyle as MapMarkerStyle;
+      if (typeof data.updatedAt === 'string') out.updatedAt = data.updatedAt;
+      return out;
+    }
+    return null;
+  } catch (error) {
+    console.error('Failed to load map marker style preference from Firestore:', error);
+    return null;
+  }
+}
+
+export async function saveUserMarkerStylePrefs(userId: string, prefs: MapMarkerStylePrefs): Promise<void> {
+  if (!isFirebaseConfigured || !userId || userId === 'guest') return;
+  try {
+    const ref = doc(db, 'users', userId, 'settings', 'mapMarkerPrefs');
+    await setDoc(ref, {
+      markerStyle: prefs.markerStyle,
+      updatedAt: prefs.updatedAt
+    }, { merge: true });
+  } catch (error) {
+    console.error('Failed to save map marker style preference to Firestore:', error);
+  }
+}
+
+// Marker icon image library sync: /users/{userId}/settings/markerIcons (v0.8.64)
+// The shared library of custom uploaded marker icons (any marker in any project
+// can reuse them) plus the removal tombstones that keep deletions authoritative.
+// Union-by-id merge on the client (mergeMarkerIconLibraries in markerIconLibrary.ts).
+// NOTE: Firestore documents cap at ~1MB; entries are usually ImgBB-hosted URLs or
+// ~10-40KB compressed data URLs, but a very large data-URL library may exceed the
+// cap — the push is skipped with a clear warning instead of corrupting the doc.
+const MARKER_ICON_LIBRARY_MAX_PUSH_BYTES = 900 * 1024;
+
+export async function fetchUserMarkerIconLibrary(userId: string): Promise<Partial<MarkerIconLibrarySnapshot> | null> {
+  if (!isFirebaseConfigured || !userId || userId === 'guest') return null;
+  try {
+    const ref = doc(db, 'users', userId, 'settings', 'markerIcons');
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const data = snap.data();
+      return {
+        items: Array.isArray(data.items) ? data.items : [],
+        removed: Array.isArray(data.removed) ? data.removed : [],
+        updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : ''
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Failed to load marker icon library from Firestore:', error);
+    return null;
+  }
+}
+
+export async function saveUserMarkerIconLibrary(userId: string, snapshot: MarkerIconLibrarySnapshot): Promise<boolean> {
+  if (!isFirebaseConfigured || !userId || userId === 'guest') return false;
+  try {
+    const payload = sanitizeForFirestore({
+      items: snapshot.items || [],
+      removed: snapshot.removed || [],
+      updatedAt: new Date().toISOString()
+    });
+    const size = JSON.stringify(payload).length;
+    if (size > MARKER_ICON_LIBRARY_MAX_PUSH_BYTES) {
+      console.warn(
+        `Marker icon library too large to sync (${Math.round(size / 1024)}KB > ${Math.round(
+          MARKER_ICON_LIBRARY_MAX_PUSH_BYTES / 1024
+        )}KB Firestore doc cap) — skipped cloud push; local library is unaffected.`
+      );
+      return false;
+    }
+    const ref = doc(db, 'users', userId, 'settings', 'markerIcons');
+    await setDoc(ref, payload, { merge: true });
+    return true;
+  } catch (error) {
+    console.error('Failed to save marker icon library to Firestore:', error);
+    return false;
   }
 }
 

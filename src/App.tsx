@@ -35,6 +35,10 @@ import {
   saveUserFontPrefs,
   fetchUserTargetBarPrefs,
   saveUserTargetBarPrefs,
+  fetchUserMarkerStylePrefs,
+  saveUserMarkerStylePrefs,
+  fetchUserMarkerIconLibrary,
+  saveUserMarkerIconLibrary,
   fetchUserGoogleFonts,
   saveUserGoogleFonts,
   fetchUserMundusProjects,
@@ -52,6 +56,8 @@ import {
 import { estimateStorageUsage } from './lib/storageEstimate';
 import { getCustomDictionary, saveCustomDictionary, getCharacterNameHighlightEnabled, setCharacterNameHighlightEnabled } from './lib/dictionaryManager';
 import { getDynamicTargetBarColorEnabled, setDynamicTargetBarColorEnabled, collectLocalTargetBarPrefs, stampLocalTargetBarPrefs, applyTargetBarPrefsToLocalStorage, mergeTargetBarPrefs } from './lib/targetProgress';
+import { getMapMarkerStyle, setMapMarkerStyle, collectLocalMarkerStylePrefs, stampLocalMarkerStylePrefs, applyMarkerStylePrefsToLocalStorage, mergeMapMarkerStylePrefs } from './lib/markerStyle';
+import { collectLocalMarkerIconLibrary, applyMarkerIconLibrarySnapshot, mergeMarkerIconLibraries, type MarkerIconImage } from './lib/markerIconLibrary';
 import {
   loadLegacyTimelineConfig,
   loadTimelineConfigMap,
@@ -192,6 +198,38 @@ export default function App() {
   const handleToggleHarperSuggestionsVertical = (enabled: boolean) => {
     setHarperSuggestionsVertical(enabled);
     try { localStorage.setItem('mundus_harper_vertical', String(enabled)); } catch { /* private mode */ }
+  };
+
+  // v0.8.64: map marker visual style (Map Markers). false (default) = classic
+  // pin with the icon inside; true = the newer style where the marker is the
+  // selected icon itself / the uploaded custom image. Passed to MapMode as a
+  // prop so an open map re-renders immediately.
+  // v0.8.64 (round 2): the toggle now SYNCS across devices — same
+  // last-write-wins pattern as the target-bar toggle (local stamp +
+  // /users/{id}/settings/mapMarkerPrefs, fire-and-forget; startup merge below).
+  const [useIconMapMarkers, setUseIconMapMarkers] = useState<boolean>(() => getMapMarkerStyle() === 'icon');
+
+  const stampAndPushMarkerStylePrefs = () => {
+    stampLocalMarkerStylePrefs();
+    saveUserMarkerStylePrefs(DEFAULT_AUTHOR_ID, collectLocalMarkerStylePrefs());
+  };
+
+  const handleToggleUseIconMapMarkers = (enabled: boolean) => {
+    setUseIconMapMarkers(enabled);
+    setMapMarkerStyle(enabled ? 'icon' : 'pin');
+    stampAndPushMarkerStylePrefs();
+  };
+
+  // v0.8.64 (round 2): the shared marker icon image library also syncs to the
+  // cloud. MapMode calls this after every add/remove (the library itself lives
+  // in localStorage via markerIconLibrary.ts); the tick lets an already-open
+  // map pick up startup-merge results. Union-by-id merge with removal
+  // tombstones keeps deletions authoritative across devices.
+  const [markerIconLibrarySyncTick, setMarkerIconLibrarySyncTick] = useState<number>(0);
+
+  const handleMarkerIconLibraryChanged = (_items?: MarkerIconImage[]) => {
+    setMarkerIconLibrarySyncTick((t) => t + 1);
+    void saveUserMarkerIconLibrary(DEFAULT_AUTHOR_ID, collectLocalMarkerIconLibrary());
   };
 
   // v0.7.84: dynamic writing-target bar coloring (Editor & Scene Detection).
@@ -1982,6 +2020,39 @@ export default function App() {
           console.warn('Failed initial target-bar preference sync:', targetBarErr);
         }
 
+        // Fetch & merge Cloud map marker style (v0.8.64 round 2): the Map
+        // Markers settings toggle syncs across devices, last-write-wins —
+        // identical semantics to the target-bar merge above.
+        try {
+          const cloudMarkerStyle = await fetchUserMarkerStylePrefs(authorId);
+          const resolvedMarkerStyle = mergeMapMarkerStylePrefs(collectLocalMarkerStylePrefs(), cloudMarkerStyle);
+          if (resolvedMarkerStyle.action === 'apply-cloud') {
+            applyMarkerStylePrefsToLocalStorage(resolvedMarkerStyle.prefs);
+            setUseIconMapMarkers(resolvedMarkerStyle.prefs.markerStyle === 'icon');
+          } else if (resolvedMarkerStyle.action === 'push-local') {
+            await saveUserMarkerStylePrefs(authorId, resolvedMarkerStyle.prefs);
+          }
+        } catch (markerStyleErr) {
+          console.warn('Failed initial map marker style sync:', markerStyleErr);
+        }
+
+        // Fetch & merge Cloud marker icon image library (v0.8.64 round 2):
+        // union-by-id with removal tombstones — images uploaded on any device
+        // become available everywhere, and an X-removal stays removed. The
+        // merged snapshot is written back to localStorage and pushed so the
+        // cloud always reflects the union (including the tombstones).
+        try {
+          const cloudMarkerIcons = await fetchUserMarkerIconLibrary(authorId);
+          const mergedMarkerIcons = mergeMarkerIconLibraries(collectLocalMarkerIconLibrary(), cloudMarkerIcons);
+          if (mergedMarkerIcons.changed) {
+            applyMarkerIconLibrarySnapshot(mergedMarkerIcons.snapshot);
+            setMarkerIconLibrarySyncTick((t) => t + 1);
+            await saveUserMarkerIconLibrary(authorId, mergedMarkerIcons.snapshot);
+          }
+        } catch (markerIconsErr) {
+          console.warn('Failed initial marker icon library sync:', markerIconsErr);
+        }
+
         // Fetch Cloud Added Google Fonts (v0.6.14)
         const cloudGoogleFonts = (await fetchUserGoogleFonts(authorId)).filter(isValidGoogleFontItem);
         let localGoogleFonts: GoogleFontItem[] = [];
@@ -3533,6 +3604,8 @@ export default function App() {
       onToggleHarperSuggestionsVertical={handleToggleHarperSuggestionsVertical}
       dynamicTargetBarColorEnabled={dynamicTargetBarColorEnabled}
       onToggleDynamicTargetBarColor={handleToggleDynamicTargetBarColor}
+      mapIconMarkersEnabled={useIconMapMarkers}
+      onToggleMapIconMarkers={handleToggleUseIconMapMarkers}
       backupDirPath={backupDirPath}
       onChooseBackupFolder={handleChooseBackupFolder}
       onClearBackupFolder={handleClearBackupFolder}
@@ -3776,6 +3849,8 @@ export default function App() {
         onToggleHarperSuggestionsVertical={handleToggleHarperSuggestionsVertical}
         dynamicTargetBarColorEnabled={dynamicTargetBarColorEnabled}
         onToggleDynamicTargetBarColor={handleToggleDynamicTargetBarColor}
+        mapIconMarkersEnabled={useIconMapMarkers}
+        onToggleMapIconMarkers={handleToggleUseIconMapMarkers}
       />
 
       {mundusImportModalElement}
@@ -3933,6 +4008,9 @@ export default function App() {
             onReturnToEditor={() => setActiveSection('editor')}
             imgbbApiKey={imgbbApiKey}
             onOpenSettings={() => setIsSettingsOpen(true)}
+            useIconMarkers={useIconMapMarkers}
+            onMarkerIconLibraryChanged={handleMarkerIconLibraryChanged}
+            markerIconLibrarySyncTick={markerIconLibrarySyncTick}
           />
         ) : (
           <SectionPreview

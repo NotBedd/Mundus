@@ -330,6 +330,7 @@ export interface MapMarker {
   y?: number; // legacy pixel coordinate for backward compatibility
   color?: string; // custom hex color
   icon?: string; // lucide icon identifier
+  iconImageId?: string; // v0.8.64: id into the global marker icon image library (lib/markerIconLibrary.ts); when set, the uploaded image is used as the marker itself
   linkedCodexId?: string; // linked Codex entry ID
   linkedCharacterId?: string; // legacy single character
   linkedCharacterIds?: string[]; // linked characters array

@@ -12,6 +12,8 @@ interface SpellCheckModalProps {
   onClose: () => void;
   spellCheckEnabled: boolean;
   onToggleSpellCheck: (enabled: boolean) => void;
+  autocorrectEnabled: boolean;
+  onToggleAutocorrect: (enabled: boolean) => void;
   customWords: string[];
   onAddWord: (word: string) => void;
   onRemoveWord: (word: string) => void;
@@ -23,6 +25,8 @@ export const SpellCheckModal: React.FC<SpellCheckModalProps> = ({
   onClose,
   spellCheckEnabled,
   onToggleSpellCheck,
+  autocorrectEnabled,
+  onToggleAutocorrect,
   customWords,
   onAddWord,
   onRemoveWord,
@@ -113,6 +117,37 @@ export const SpellCheckModal: React.FC<SpellCheckModalProps> = ({
             <span
               className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-neutral-900 shadow-md ring-0 transition duration-200 ease-in-out ${
                 spellCheckEnabled 
+                  ? 'translate-x-5 dark:bg-neutral-900' 
+                  : 'translate-x-0 bg-white'
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* v0.8.64: Inline Autocorrect Toggle Section */}
+        <div className={`mt-3 p-4 rounded-xl border flex items-center justify-between gap-4 ${
+          isDarkMode ? 'bg-neutral-900/60 border-neutral-800' : 'bg-neutral-50 border-neutral-200'
+        }`}>
+          <div>
+            <div className="text-xs font-semibold">Autocorrect Suggestions</div>
+            <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 max-w-xs">
+              Popup with corrections while typing — turn off to type without interruptions. Underlines stay. Device-specific: OFF by default on Android/iOS (your keyboard already autocorrects), and this toggle never syncs to the cloud.
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autocorrectEnabled}
+            onClick={() => onToggleAutocorrect(!autocorrectEnabled)}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              autocorrectEnabled 
+                ? isDarkMode ? 'bg-white' : 'bg-neutral-900' 
+                : isDarkMode ? 'bg-neutral-800' : 'bg-neutral-300'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white dark:bg-neutral-900 shadow-md ring-0 transition duration-200 ease-in-out ${
+                autocorrectEnabled 
                   ? 'translate-x-5 dark:bg-neutral-900' 
                   : 'translate-x-0 bg-white'
               }`}

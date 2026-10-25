@@ -490,6 +490,17 @@ html:not(.dark) .mundus-leaflet-map {
   z-index: 999 !important;
 }
 
+/* v0.8.64: Icon-style marker badge (marker = the selected icon itself) */
+.mundus-map-marker-iconbadge {
+  cursor: pointer;
+  transition: transform 0.15s ease-out, filter 0.15s ease-out;
+}
+
+.mundus-map-marker-iconbadge:hover {
+  transform: scale(1.15);
+  z-index: 999 !important;
+}
+
 /* Leaflet Popup Styling */
 .mundus-leaflet-popup .leaflet-popup-content-wrapper {
   padding: 0 !important;

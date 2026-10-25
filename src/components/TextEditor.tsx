@@ -77,6 +77,8 @@ import { EnsoIcon } from './icons/EnsoIcon';
 import { 
   getSpellCheckEnabled, 
   setSpellCheckEnabled, 
+  getAutocorrectEnabled,
+  setAutocorrectEnabled,
   getCustomDictionary, 
   addWordToDictionary, 
   removeWordFromDictionary 
@@ -870,6 +872,10 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   const [showSpellCheckReview, setShowSpellCheckReview] = useState(false);
   const [highlightInDoc, setHighlightInDoc] = useState(true);
   const [spellCheckEnabled, setSpellCheckState] = useState<boolean>(() => getSpellCheckEnabled());
+  // v0.8.64: master kill-switch for the inline autocorrect suggestion popup.
+  // Default ON = exact v0.8.63 behavior; OFF = no popup ever (underlines and
+  // the manual review panel keep working).
+  const [autocorrectEnabled, setAutocorrectState] = useState<boolean>(() => getAutocorrectEnabled());
   const [customWords, setCustomWords] = useState<string[]>(() => getCustomDictionary(activeMundusId));
   const [ignoredWords, setIgnoredWords] = useState<string[]>([]);
   // v0.7.96: transient "added" confirmation on the + Dictionary button —
@@ -2141,7 +2147,7 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   const harperSuggestionRunRef = useRef(0);
 
   const checkCaretWordForSuggestion = useCallback(() => {
-    if (!spellCheckEnabled) return;
+    if (!spellCheckEnabled || !autocorrectEnabled) return;
     const editor = editorRef.current;
     if (!editor) return;
     // NOTE: deliberately NOT checking document.activeElement — pagination
@@ -2222,15 +2228,15 @@ export const TextEditor: React.FC<TextEditorProps> = ({
         endOffset: cw.end,
       });
     })();
-  }, [spellCheckEnabled, effectiveCustomWords, ignoredWords]);
+  }, [spellCheckEnabled, autocorrectEnabled, effectiveCustomWords, ignoredWords]);
 
   const scheduleInlineSuggestionCheck = useCallback(() => {
     if (inlineSuggestionTimerRef.current) clearTimeout(inlineSuggestionTimerRef.current);
-    if (!spellCheckEnabled) return;
+    if (!spellCheckEnabled || !autocorrectEnabled) return;
     inlineSuggestionTimerRef.current = setTimeout(() => {
       checkCaretWordForSuggestion();
     }, 350);
-  }, [spellCheckEnabled, checkCaretWordForSuggestion]);
+  }, [spellCheckEnabled, autocorrectEnabled, checkCaretWordForSuggestion]);
 
   // v0.8.0: cycle through up to 3 candidate corrections while the popup is
   // open (←/→ keys or the popup's chevrons). The selected candidate is written
@@ -2474,11 +2480,13 @@ export const TextEditor: React.FC<TextEditorProps> = ({
     // the Harper WASM module there.
     // v0.8.61: also skip the warm-up while a non-English spell dictionary is
     // active — Harper's suggestions are English-only and unused there.
+    // v0.8.64: also skip while the autocorrect popup is disabled entirely.
     if (ANDROID_APP) return;
+    if (!autocorrectEnabled) return;
     if (getActiveSpellLanguage() !== 'en') return;
     const warm = setTimeout(() => { void ensureHarper(); }, 1200);
     return () => clearTimeout(warm);
-  }, []);
+  }, [autocorrectEnabled]);
 
   // Calculate counts and propagate updates (Debounced for zero typing latency)
   const handleEditorInput = useCallback(() => {
@@ -3088,6 +3096,17 @@ export const TextEditor: React.FC<TextEditorProps> = ({
   const handleToggleSpellCheck = (enabled: boolean) => {
     setSpellCheckState(enabled);
     setSpellCheckEnabled(enabled);
+  };
+
+  // v0.8.64: dictionary-menu toggle for the inline autocorrect popup.
+  // Turning it off also kills any open popup and cancels the pending check.
+  const handleToggleAutocorrect = (enabled: boolean) => {
+    setAutocorrectState(enabled);
+    setAutocorrectEnabled(enabled);
+    if (!enabled) {
+      if (inlineSuggestionTimerRef.current) clearTimeout(inlineSuggestionTimerRef.current);
+      setInlineSuggestion(null);
+    }
   };
 
   const handleAddCustomWord = (word: string) => {
@@ -7710,6 +7729,8 @@ export const TextEditor: React.FC<TextEditorProps> = ({
         onClose={() => setShowSpellCheckModal(false)}
         spellCheckEnabled={spellCheckEnabled}
         onToggleSpellCheck={handleToggleSpellCheck}
+        autocorrectEnabled={autocorrectEnabled}
+        onToggleAutocorrect={handleToggleAutocorrect}
         customWords={customWords}
         onAddWord={handleAddCustomWord}
         onRemoveWord={handleRemoveCustomWord}

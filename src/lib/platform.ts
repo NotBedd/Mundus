@@ -62,3 +62,30 @@ export const isAndroidNativeShell = (): boolean => {
   }
   return cachedNativeShell;
 };
+
+// v0.8.64 (round 2): iOS detection — the iOS Capacitor WebView reports
+// platform 'ios'; the UA fallbacks cover iPhone/iPad/iPod and iPadOS 13+
+// (which masks itself as a Mac with multi-touch support).
+export const isIosApp = (): boolean => {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  try {
+    const cap = (window as any).Capacitor;
+    if (cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform()) {
+      const platform = typeof cap.getPlatform === 'function' ? cap.getPlatform() : '';
+      if (platform === 'ios') return true;
+      // Not iOS when Capacitor positively identifies another platform.
+      if (platform && platform !== 'web' && platform !== '') return false;
+    }
+  } catch {
+    // Fall through to the user agent checks.
+  }
+  const ua = navigator.userAgent || '';
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  // iPadOS 13+ on desktop-mode Safari claims to be Macintosh but keeps touch.
+  return /Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1;
+};
+
+// v0.8.64 (round 2): TRUE on the native phone apps (Android or iOS) and on
+// Android/iOS browsers. Used for device-specific setting defaults (the inline
+// autocorrect popup ships OFF on phones — their keyboards already autocorrect).
+export const isMobileApp = (): boolean => isAndroidApp() || isIosApp();

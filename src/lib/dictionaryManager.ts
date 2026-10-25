@@ -1,4 +1,5 @@
 // Custom Dictionary and Spell Check Manager for Mundus
+import { isMobileApp } from './platform';
 
 const BASE_STORAGE_KEY = 'mundus_custom_dictionary';
 const SPELLCHECK_KEY = 'mundus_spellcheck_enabled';
@@ -26,6 +27,38 @@ export function setSpellCheckEnabled(enabled: boolean): void {
     localStorage.setItem(SPELLCHECK_KEY, String(enabled));
   } catch (e) {
     console.error('Failed to save spellcheck setting:', e);
+  }
+}
+
+// v0.8.64: the inline autocorrect/suggestion popup can now be fully disabled
+// from the dictionary menu. Spellcheck underlines and the manual review panel
+// stay untouched — this only gates the proactive popup while typing.
+//
+// v0.8.64 (round 2): DEVICE-SPECIFIC SETTING, never cloud-synced. It lives in
+// this device's localStorage only (deliberately excluded from every Firestore
+// doc and from the cloud merge) so a phone and a desktop can keep different
+// preferences. Default also differs per device: ON on desktop, OFF on mobile
+// (Android/iOS) — phone keyboards already autocorrect for you, so the extra
+// popup is noise there; desktop users get the suggestions by default.
+const AUTOCORRECT_KEY = 'mundus_autocorrect_enabled';
+
+export function getAutocorrectEnabled(): boolean {
+  // Mobile default is computed first so a localStorage read failure still
+  // yields the right platform default.
+  const platformDefault = !isMobileApp();
+  try {
+    const saved = localStorage.getItem(AUTOCORRECT_KEY);
+    return saved !== null ? saved === 'true' : platformDefault;
+  } catch {
+    return platformDefault;
+  }
+}
+
+export function setAutocorrectEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(AUTOCORRECT_KEY, String(enabled));
+  } catch (e) {
+    console.error('Failed to save autocorrect setting:', e);
   }
 }
 

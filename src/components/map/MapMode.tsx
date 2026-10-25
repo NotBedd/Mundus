@@ -64,6 +64,13 @@ import {
   deleteLocalMapImage 
 } from '../../lib/mapStorage';
 import {
+  getMarkerIconLibrary,
+  addMarkerIconImage,
+  removeMarkerIconImage,
+  MAX_MARKER_ICON_IMAGES,
+  type MarkerIconImage
+} from '../../lib/markerIconLibrary';
+import {
   isFirebaseConfigured,
   DEFAULT_AUTHOR_ID,
   uploadUserMapImage,
@@ -93,6 +100,17 @@ interface MapModeProps {
   onReturnToEditor: () => void;
   imgbbApiKey?: string;
   onOpenSettings?: () => void;
+  // v0.8.64: marker visual style — false (default) = classic pin with the icon
+  // inside; true = the newer style where the marker is the selected icon
+  // itself (round badge / custom image, no pin shape).
+  useIconMarkers?: boolean;
+  // v0.8.64 (round 2): cloud sync of the shared marker icon image library.
+  // Called by this component after every library add/remove so App can push
+  // the updated snapshot (items + removal tombstones) to Firestore.
+  onMarkerIconLibraryChanged?: (items: MarkerIconImage[]) => void;
+  // Bumped by App whenever the library was merged/updated externally (startup
+  // cloud merge); the component re-reads localStorage when it changes.
+  markerIconLibrarySyncTick?: number;
 }
 
 // Marker category icons (the category LIST itself is per-project since v0.7.76
@@ -141,27 +159,43 @@ export const getIconComponent = (iconName: string) => {
 // the actual marker glyph (centered on the pin's white disc). The default
 // 'MapPin' keeps the clean standard-pin look — any other icon replaces the
 // empty disc with the real lucide glyph so markers are visually distinct.
-const createMarkerIconHtml = (color: string, iconName: string, title: string) => {
+// v0.8.64: an optional imageSrc (from the marker icon image library) is
+// clipped into the pin's white disc instead of the glyph.
+const createMarkerIconHtml = (color: string, iconName: string, title: string, imageSrc?: string) => {
   const safeTitle = title.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeSrc = (imageSrc || '').replace(/"/g, '&quot;');
   let glyphSvg = '';
   const effectiveIcon = (iconName || '').trim();
-  if (effectiveIcon && effectiveIcon !== 'MapPin') {
+  if (effectiveIcon && effectiveIcon !== 'MapPin' && !safeSrc) {
     try {
       const IconComp = getIconComponent(effectiveIcon);
       // 14x14 glyph centered on the white disc (cx 16, cy 15, r 7):
       // left = 16 - 7 = 9, top = 15 - 7 = 8.
+      // zIndex 201: keep the glyph deterministically above the pin-shape SVG
+      // (Leaflet CSS gives every svg inside .leaflet-map-pane z-index 200;
+      // the glyph only won before via DOM-order tiebreak — make it explicit).
       glyphSvg = renderToStaticMarkup(
         React.createElement(IconComp, {
           size: 14,
           strokeWidth: 2.8,
           color: '#3f3f46',
-          style: { position: 'absolute', left: '9px', top: '8px', pointerEvents: 'none' },
+          style: { position: 'absolute', left: '9px', top: '8px', pointerEvents: 'none', zIndex: 201 },
         })
       );
     } catch {
       glyphSvg = ''; // glyph rendering is best-effort — the pin still shows
     }
   }
+  // v0.8.64: custom image marker (pin style) — the uploaded image is clipped
+  // into a round disc layered over the pin's white circle (which acts as its
+  // ring/border). Positioned exactly over the disc: cx 16, cy 15, r 7.
+  // v0.8.64 (hotfix): z-index:201 is REQUIRED — Leaflet's own CSS ships
+  // `.leaflet-map-pane svg { z-index: 200 }`, which matches the pin-shape SVG
+  // and would otherwise paint it (with its opaque white disc) ON TOP of this
+  // div, hiding the custom image inside the pin head. 201 > 200 wins.
+  const imageDiv = safeSrc
+    ? `<div style="position:absolute; left:9px; top:8px; width:14px; height:14px; border-radius:50%; overflow:hidden; pointer-events:none; z-index:201;"><img src="${safeSrc}" alt="" style="width:100%; height:100%; object-fit:cover; display:block;" referrerpolicy="no-referrer" draggable="false" /></div>`
+    : '';
   return `
     <div class="mundus-map-marker-pin group relative" style="width: 32px; height: 38px; margin: 0; padding: 0; pointer-events: auto;">
       <svg width="32" height="38" viewBox="0 0 32 38" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5)); transform-origin: 16px 38px;" class="transition-transform duration-150 group-hover:scale-115">
@@ -171,7 +205,46 @@ const createMarkerIconHtml = (color: string, iconName: string, title: string) =>
       <div class="absolute -top-7 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-neutral-900/95 text-white text-[11px] font-medium px-2 py-0.5 rounded shadow-xl whitespace-nowrap z-[999] border border-neutral-700">
         ${safeTitle}
       </div>
+      ${imageDiv}
       ${glyphSvg}
+    </div>
+  `;
+};
+
+// v0.8.64 — DOM generator for the NEW icon-style Leaflet DivIcon.
+// The marker IS the selected icon: a 34px round badge filled with the marker
+// color and the lucide glyph in white (or the uploaded custom image filling
+// the badge), anchored at its center — no pin shape around it.
+const createIconMarkerHtml = (color: string, iconName: string, title: string, imageSrc?: string) => {
+  const safeTitle = title.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeSrc = (imageSrc || '').replace(/"/g, '&quot;');
+  let glyphSvg = '';
+  if (!safeSrc) {
+    try {
+      const IconComp = getIconComponent((iconName || '').trim());
+      glyphSvg = renderToStaticMarkup(
+        React.createElement(IconComp, {
+          size: 16,
+          strokeWidth: 2.4,
+          color: '#ffffff',
+          style: { pointerEvents: 'none' },
+        })
+      );
+    } catch {
+      glyphSvg = ''; // best-effort — the colored badge still shows
+    }
+  }
+  const inner = safeSrc
+    ? `<img src="${safeSrc}" alt="" style="width:100%; height:100%; object-fit:cover; display:block; pointer-events:none;" referrerpolicy="no-referrer" draggable="false" />`
+    : glyphSvg;
+  return `
+    <div class="mundus-map-marker-iconbadge group relative" style="width: 34px; height: 34px; margin: 0; padding: 0; pointer-events: auto;">
+      <div style="width: 34px; height: 34px; border-radius: 50%; overflow: hidden; background: ${color}; border: 2px solid #ffffff; box-shadow: 0 2px 6px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; transform-origin: center;" class="transition-transform duration-150 group-hover:scale-110">
+        ${inner}
+      </div>
+      <div class="absolute -top-7 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-neutral-900/95 text-white text-[11px] font-medium px-2 py-0.5 rounded shadow-xl whitespace-nowrap z-[999] border border-neutral-700">
+        ${safeTitle}
+      </div>
     </div>
   `;
 };
@@ -194,8 +267,11 @@ export const MapMode: React.FC<MapModeProps> = ({
   onNavigateToCodex,
   onNavigateToCharacter,
   onReturnToEditor,
-  imgbbApiKey,
-  onOpenSettings
+  imgbbApiKey = '',
+  onOpenSettings,
+  useIconMarkers = false,
+  onMarkerIconLibraryChanged,
+  markerIconLibrarySyncTick = 0
 }) => {
   const storageKey = `mundus_map_image_${activeMundusId || 'default'}`;
   const markersStorageKey = `mundus_map_markers_${activeMundusId || 'default'}`;
@@ -337,6 +413,22 @@ export const MapMode: React.FC<MapModeProps> = ({
   const [markerImageNotice, setMarkerImageNotice] = useState<string | null>(null);
   const [markerImageError, setMarkerImageError] = useState<string | null>(null);
   const markerFileInputRef = useRef<HTMLInputElement>(null);
+
+  // v0.8.64: global marker icon image library (shared by every marker in every
+  // project) + the custom image picked for the marker being edited. When set,
+  // the uploaded image is used AS the marker instead of the lucide glyph.
+  const [markerIconLibrary, setMarkerIconLibrary] = useState<MarkerIconImage[]>(() => getMarkerIconLibrary());
+  const [formIconImageId, setFormIconImageId] = useState<string>('');
+  const [isUploadingMarkerIcon, setIsUploadingMarkerIcon] = useState(false);
+  const [markerIconUploadError, setMarkerIconUploadError] = useState<string | null>(null);
+  const markerIconFileInputRef = useRef<HTMLInputElement>(null);
+
+  // v0.8.64 (round 2): re-read the shared icon library whenever App reports an
+  // external change (startup cloud merge). Keeps an already-open map in sync
+  // with images uploaded on another device; on mount it is a harmless re-read.
+  useEffect(() => {
+    setMarkerIconLibrary(getMarkerIconLibrary());
+  }, [markerIconLibrarySyncTick]);
 
   // Selected Marker for Detail Drawer / View
   const [activeMarkerDetail, setActiveMarkerDetail] = useState<MapMarker | null>(null);
@@ -660,6 +752,8 @@ export const MapMode: React.FC<MapModeProps> = ({
     setFormLinkedDocumentIds(mergedDocs);
 
     setFormLinkedCodexId(marker.linkedCodexId || matchingCodex?.id);
+    setFormIconImageId(marker.iconImageId || '');
+    setMarkerIconUploadError(null);
     setMarkerImageNotice(null);
     setMarkerImageError(null);
   };
@@ -832,6 +926,15 @@ export const MapMode: React.FC<MapModeProps> = ({
   }, [mapImageUrl, imageDimensions, activeMundusId, accentColor]);
 
   // Sync Leaflet Markers with React State (Translating % coordinates to Leaflet CRS)
+  // v0.8.64: resolved icon-image URLs map (library id -> src) so custom image
+  // markers render without a lookup per marker, and rebuild when the library
+  // changes (e.g. an image was removed from the library in the editor).
+  const iconImageUrls = useMemo(() => {
+    const map = new Map<string, string>();
+    markerIconLibrary.forEach((it) => map.set(it.id, it.url));
+    return map;
+  }, [markerIconLibrary]);
+
   useEffect(() => {
     const map = leafletMapRef.current;
     const layer = markersLayerRef.current;
@@ -849,19 +952,32 @@ export const MapMode: React.FC<MapModeProps> = ({
       const catInfo = getCategoryInfo(marker.category);
       const pinColor = marker.color || catInfo.color || '#8b5cf6';
       const iconName = marker.icon || catInfo.iconName || 'MapPin';
+      // v0.8.64: custom uploaded image (falls back to the lucide glyph when
+      // the library entry was removed)
+      const customImageSrc = marker.iconImageId ? iconImageUrls.get(marker.iconImageId) : undefined;
 
       // Translate Percentage Coordinates (Top-Left 0..100) to Leaflet CRS
       const leafletLng = (marker.xPct / 100) * width;
       const leafletLat = height - (marker.yPct / 100) * height;
 
-      // Exact pixel anchor: 32px wide x 38px high, anchored at bottom center (16, 38)
-      const customIcon = L.divIcon({
-        className: 'mundus-leaflet-div-icon',
-        html: createMarkerIconHtml(pinColor, iconName, marker.title),
-        iconSize: [32, 38],
-        iconAnchor: [16, 38],
-        popupAnchor: [0, -38]
-      });
+      // v0.8.64: two marker styles. Classic (default): pin with the icon on
+      // its disc, anchored at the bottom tip. New icon style: the marker is
+      // the icon itself — a round badge (or the custom image) anchored center.
+      const customIcon = useIconMarkers
+        ? L.divIcon({
+            className: 'mundus-leaflet-div-icon',
+            html: createIconMarkerHtml(pinColor, iconName, marker.title, customImageSrc),
+            iconSize: [34, 34],
+            iconAnchor: [17, 17],
+            popupAnchor: [0, -20]
+          })
+        : L.divIcon({
+            className: 'mundus-leaflet-div-icon',
+            html: createMarkerIconHtml(pinColor, iconName, marker.title, customImageSrc),
+            iconSize: [32, 38],
+            iconAnchor: [16, 38],
+            popupAnchor: [0, -38]
+          });
 
       const leafletMarker = L.marker([leafletLat, leafletLng], {
         icon: customIcon,
@@ -890,7 +1006,7 @@ export const MapMode: React.FC<MapModeProps> = ({
 
       leafletMarker.addTo(layer);
     });
-  }, [markers, visibleCategories, imageDimensions, getCategoryInfo]);
+  }, [markers, visibleCategories, imageDimensions, getCategoryInfo, useIconMarkers, iconImageUrls]);
 
   // Reset / Fit Viewport to Map
   const handleFitBounds = useCallback(() => {
@@ -1123,6 +1239,7 @@ export const MapMode: React.FC<MapModeProps> = ({
       yPct: safeYPct,
       color: formThemeColor,
       icon: formIcon,
+      iconImageId: formIconImageId || undefined, // v0.8.64: custom uploaded marker icon (marker-only; codex keeps the lucide icon)
       linkedCodexId: codexId,
       linkedCharacterIds: formLinkedCharacterIds,
       linkedDocumentIds: formLinkedDocumentIds,
@@ -1195,6 +1312,72 @@ export const MapMode: React.FC<MapModeProps> = ({
       setIsUploadingMarkerImage(false);
       if (markerFileInputRef.current) markerFileInputRef.current.value = '';
     }
+  };
+
+  // v0.8.64: Marker Icon Image upload (library). The image is compressed to a
+  // small square-ish thumbnail, optionally hosted on ImgBB (when a key is
+  // configured, mirroring the codex-entry image flow), then stored ONCE in the
+  // global library so any marker in any project can reuse it.
+  const handleMarkerIconImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setMarkerIconUploadError(null);
+    setIsUploadingMarkerIcon(true);
+
+    try {
+      let url: string;
+      if (imgbbApiKey) {
+        const result = await uploadImageToImgBB(file, imgbbApiKey);
+        if (result.success && result.url) {
+          url = result.url;
+        } else {
+          url = await fileToOptimizedDataUrl(file, 256, 0.85);
+        }
+      } else {
+        url = await fileToOptimizedDataUrl(file, 256, 0.85);
+      }
+
+      const add = addMarkerIconImage(url, file.name || 'icon');
+      if (!add.ok || !add.item) {
+        const reason = add.error === 'full'
+          ? `The icon library is full (max ${MAX_MARKER_ICON_IMAGES} images). Remove one first.`
+          : add.error === 'too-large'
+          ? 'This image is too large even after compression. Try a smaller one.'
+          : 'Browser storage is full — the icon image could not be saved.';
+        setMarkerIconUploadError(reason);
+        return;
+      }
+
+      const newItem = add.item;
+      const nextLibrary = [newItem, ...markerIconLibrary];
+      setMarkerIconLibrary(nextLibrary);
+      // v0.8.64 (round 2): let App push the updated library (items + removal
+      // tombstones) to the cloud so other devices pick it up.
+      onMarkerIconLibraryChanged?.(nextLibrary);
+      // Auto-select the fresh upload for the marker being edited
+      setFormIconImageId(newItem.id);
+    } catch (err: any) {
+      console.error('Marker icon upload failed:', err);
+      setMarkerIconUploadError(err?.message || 'Failed to process the icon image');
+    } finally {
+      setIsUploadingMarkerIcon(false);
+      if (markerIconFileInputRef.current) markerIconFileInputRef.current.value = '';
+    }
+  };
+
+  // v0.8.64: remove an image from the library entirely (X badge). Markers that
+  // referenced it gracefully fall back to their lucide glyph on next render.
+  // v0.8.64 (round 2): the removal is also tombstoned (inside
+  // removeMarkerIconImage) and pushed to the cloud so other devices never
+  // resurrect the deleted entry.
+  const handleRemoveMarkerIconImage = (id: string) => {
+    const updated = removeMarkerIconImage(id);
+    setMarkerIconLibrary(updated);
+    if (formIconImageId === id) {
+      setFormIconImageId('');
+    }
+    onMarkerIconLibraryChanged?.(updated);
   };
 
   // Tag helper
@@ -1822,10 +2005,16 @@ export const MapMode: React.FC<MapModeProps> = ({
             }`}>
               <div className="flex items-center gap-2.5">
                 <div 
-                  className="w-8 h-8 rounded-xl flex items-center justify-center text-white shadow-xs"
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-white shadow-xs overflow-hidden shrink-0"
                   style={{ backgroundColor: formThemeColor }}
                 >
                   {(() => {
+                    // v0.8.64: the header badge mirrors the custom icon image
+                    // when one is picked for this marker
+                    const iconImgUrl = formIconImageId ? markerIconLibrary.find((it) => it.id === formIconImageId)?.url : undefined;
+                    if (iconImgUrl) {
+                      return <img src={iconImgUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />;
+                    }
                     const IconComp = getIconComponent(formIcon);
                     return <IconComp className="w-4 h-4" />;
                   })()}
@@ -2106,12 +2295,17 @@ export const MapMode: React.FC<MapModeProps> = ({
                   }`}>
                     {AVAILABLE_ICONS.map((item) => {
                       const IconComp = item.icon;
-                      const isSelected = formIcon === item.name;
+                      // v0.8.64: a custom icon image, when picked, replaces the
+                      // lucide glyph as the marker — no emblem looks selected then
+                      const isSelected = !formIconImageId && formIcon === item.name;
                       return (
                         <button
                           key={item.name}
                           type="button"
-                          onClick={() => setFormIcon(item.name)}
+                          onClick={() => {
+                            setFormIcon(item.name);
+                            setFormIconImageId('');
+                          }}
                           className={`p-1.5 rounded-lg text-xs transition-colors cursor-pointer ${
                             isSelected
                               ? 'bg-accent text-white shadow-xs'
@@ -2125,6 +2319,91 @@ export const MapMode: React.FC<MapModeProps> = ({
                         </button>
                       );
                     })}
+                  </div>
+
+                  {/* v0.8.64: Custom Icon Images — uploaded images that are used AS
+                      the marker itself (both marker styles). Shared library: an
+                      image uploaded once is available to every marker and can be
+                      removed again with the X badge on its top-right corner. */}
+                  <div className="space-y-1.5 pt-0.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider font-mono text-neutral-500 dark:text-neutral-400">
+                        Custom Icon Images
+                      </span>
+                      <span className="text-[10px] font-mono text-neutral-400 shrink-0">
+                        {markerIconLibrary.length}/{MAX_MARKER_ICON_IMAGES}
+                      </span>
+                    </div>
+                    <input
+                      ref={markerIconFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleMarkerIconImageUpload}
+                      className="hidden"
+                    />
+                    <div className={`flex items-center gap-1.5 flex-wrap p-1.5 rounded-xl border min-h-[52px] ${
+                      isDarkMode ? 'border-neutral-800 bg-neutral-900/40' : 'border-neutral-200 bg-neutral-100/70'
+                    }`}>
+                      {markerIconLibrary.map((it) => {
+                        const isImgSelected = formIconImageId === it.id;
+                        return (
+                          <div key={it.id} className="relative shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setFormIconImageId(isImgSelected ? '' : it.id)}
+                              title={`${it.name}${isImgSelected ? ' (selected — click again to detach)' : ''}`}
+                              className={`w-9 h-9 rounded-lg overflow-hidden border-2 transition-all cursor-pointer block ${
+                                isImgSelected
+                                  ? 'border-accent ring-2 ring-accent/40 scale-105'
+                                  : 'border-transparent opacity-80 hover:opacity-100 hover:border-neutral-400 dark:hover:border-neutral-500'
+                              }`}
+                            >
+                              <img
+                                src={it.url}
+                                alt={it.name}
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                                draggable={false}
+                              />
+                            </button>
+                            {/* X: remove the image from the library entirely */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveMarkerIconImage(it.id);
+                              }}
+                              title="Remove from icon library"
+                              className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-md transition-transform hover:scale-110 cursor-pointer z-10"
+                            >
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
+
+                      {/* Upload tile */}
+                      <button
+                        type="button"
+                        onClick={() => markerIconFileInputRef.current?.click()}
+                        disabled={isUploadingMarkerIcon}
+                        title="Upload a custom image to use as a marker icon"
+                        className="w-9 h-9 rounded-lg border border-dashed border-neutral-400 dark:border-neutral-600 flex items-center justify-center text-neutral-400 hover:text-accent hover:border-accent transition-colors cursor-pointer shrink-0 disabled:opacity-60"
+                      >
+                        {isUploadingMarkerIcon ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Plus className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+
+                    {markerIconUploadError && (
+                      <p className="text-[10px] text-rose-500 leading-snug">{markerIconUploadError}</p>
+                    )}
+                    <p className="text-[10px] text-neutral-400 leading-snug">
+                      Uploaded images are saved to a shared library and can be picked for any marker — the image itself becomes the marker on the map. Click a selected image again to detach it; the X removes it from the library (markers fall back to their emblem).
+                    </p>
                   </div>
                 </div>
               </div>

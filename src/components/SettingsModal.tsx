@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Settings, X, Sliders, Layout, Check, Palette, Type, HardDrive, Download, Upload, Clock, RefreshCw, AlertCircle, AlertTriangle, Keyboard, RotateCcw, Image as ImageIcon, ExternalLink, Eye, EyeOff, Key, Monitor, Folder, FolderOpen, Highlighter } from 'lucide-react';
+import { Settings, X, Sliders, Layout, Check, Palette, Type, HardDrive, Download, Upload, Clock, RefreshCw, AlertCircle, AlertTriangle, Keyboard, RotateCcw, Image as ImageIcon, ExternalLink, Eye, EyeOff, Key, Monitor, Folder, FolderOpen, Highlighter, MapPin } from 'lucide-react';
 import type { BackupSnapshotMeta } from '../lib/backupEngine';
 import type { CustomKeybindings, ShortcutBinding } from '../types';
 import { DEFAULT_KEYBINDINGS, findBindingConflicts, formatBinding, getKeybindings, saveKeybindings } from '../lib/shortcutManager';
@@ -48,6 +48,11 @@ interface SettingsModalProps {
   onToggleCharacterNameHighlight?: (enabled: boolean) => void;
   dynamicTargetBarColorEnabled?: boolean;
   onToggleDynamicTargetBarColor?: (enabled: boolean) => void;
+  // v0.8.64: map marker visual style — false (default) = classic pin with the
+  // icon drawn inside it, true = the newer style where the marker is the
+  // selected icon itself (round badge / custom image, no pin shape).
+  mapIconMarkersEnabled?: boolean;
+  onToggleMapIconMarkers?: (enabled: boolean) => void;
 }
 
 const ACCENT_PRESETS = [
@@ -168,7 +173,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onToggleHarperSuggestionsVertical,
   onToggleCharacterNameHighlight,
   dynamicTargetBarColorEnabled = true,
-  onToggleDynamicTargetBarColor
+  onToggleDynamicTargetBarColor,
+  mapIconMarkersEnabled,
+  onToggleMapIconMarkers
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [keybindings, setKeybindings] = useState<CustomKeybindings>(() => getKeybindings());
@@ -514,6 +521,50 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span
                     className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
                       dynamicTargetBarColorEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* v0.8.64: Map Marker Style */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider font-mono text-neutral-500 dark:text-neutral-400">
+              <MapPin className="w-3.5 h-3.5" />
+              <span>Map Markers</span>
+            </div>
+
+            <div className={`p-4 rounded-xl border transition-all ${
+              isDarkMode ? 'bg-neutral-900/60 border-neutral-800' : 'bg-neutral-50/80 border-neutral-200'
+            }`}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <label htmlFor="toggle-map-icon-markers" className="text-xs font-semibold block cursor-pointer select-none">
+                    Show Icons as Markers (No Pin)
+                  </label>
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                    Switches how location markers are drawn on the world map. Off (default): the classic Mundus pin with the selected icon drawn on its white disc. On: the newer style — the marker is the selected icon itself, floating as a round colored badge (or the uploaded custom image) directly on the map with no pin shape around it. Custom icon images uploaded from the marker editor are used in both styles. This setting and your uploaded marker icons sync to the cloud across your devices.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  id="toggle-map-icon-markers"
+                  role="switch"
+                  aria-checked={!!mapIconMarkersEnabled}
+                  onClick={() => onToggleMapIconMarkers?.(!mapIconMarkersEnabled)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 ${
+                    mapIconMarkersEnabled
+                      ? 'bg-purple-600'
+                      : isDarkMode
+                      ? 'bg-neutral-700'
+                      : 'bg-neutral-300'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      mapIconMarkersEnabled ? 'translate-x-5' : 'translate-x-0'
                     }`}
                   />
                 </button>
