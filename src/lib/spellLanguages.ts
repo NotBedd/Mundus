@@ -15,6 +15,11 @@
 //     silent fallbacks confused the dictionary UX. The setting is now a
 //     plain manual choice; a legacy stored 'auto' value resolves to
 //     English (the previous effective default).
+//   - v0.8.65: Portuguese (pt — European, LibreOffice pt_PT), Turkish (tr)
+//     and Russian (ru) join es/fr/it/de as Hunspell-backed languages. All
+//     three ship SET UTF-8 dictionaries and ride the exact same engine
+//     path (tokenize by Unicode letters → hunspell-asm). Autocorrect/
+//     grammar suggestions remain English-only (Harper), unchanged.
 
 export interface SpellLanguageInfo {
   code: string;
@@ -27,6 +32,11 @@ export const SPELL_LANGUAGES: SpellLanguageInfo[] = [
   { code: 'fr', name: 'Français (French)' },
   { code: 'it', name: 'Italiano (Italian)' },
   { code: 'de', name: 'Deutsch (German)' },
+  // v0.8.65: Portuguese / Turkish / Russian join the Hunspell family —
+  // same real dictionary data Chrome ships, same one-at-a-time lazy chunks.
+  { code: 'pt', name: 'Português (Portuguese)' },
+  { code: 'tr', name: 'Türkçe (Turkish)' },
+  { code: 'ru', name: 'Русский (Russian)' },
 ];
 
 const LANG_SETTING_KEY = 'mundus_spell_language';

@@ -157,8 +157,9 @@ export const SpellCheckModal: React.FC<SpellCheckModalProps> = ({
 
         {/* v0.8.61: Spell Language — explicit choice. v0.8.63: the Auto
             (auto-detect) option was removed at the user's request; English
-            uses the built-in engine, Spanish/French/Italian/German use real
-            Hunspell dictionaries (Chrome's own data) loaded one at a time. */}
+            uses the built-in engine, Spanish/French/Italian/German/Portuguese/
+            Turkish/Russian use real Hunspell dictionaries (Chrome's own data)
+            loaded one at a time. v0.8.65: pt/tr/ru added. */}
         <div className={`mt-4 p-4 rounded-xl border ${
           isDarkMode ? 'bg-neutral-900/60 border-neutral-800' : 'bg-neutral-50 border-neutral-200'
         }`}>

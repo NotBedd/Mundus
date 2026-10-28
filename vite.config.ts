@@ -9,7 +9,9 @@ import {defineConfig} from 'vite';
 // These exact-specifier aliases point Vite straight at the real files,
 // bypassing the exports map, while the rest of each package resolves normally.
 const dictionaryDataAliases: Record<string, string> = Object.fromEntries(
-  ['es', 'fr', 'it', 'de'].flatMap((code) => {
+  // v0.8.65: pt/ru/tr join the alias list (same restrictive exports map —
+  // without the aliases Vite fails with "Package subpath 'undefined'").
+  ['es', 'fr', 'it', 'de', 'pt', 'ru', 'tr'].flatMap((code) => {
     const pkg = path.resolve(__dirname, `node_modules/dictionary-${code}`);
     return [
       [`dictionary-${code}/index.dic?raw`, `${pkg}/index.dic?raw`],

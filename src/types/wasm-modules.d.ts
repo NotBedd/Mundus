@@ -20,7 +20,8 @@ declare module '*.wasm?init' {
 // `__wbg_*` / `__wbindgen_*` host-import shims is intentionally not
 // enumerated — grammarEngine.ts accesses them through an index signature.
 // v0.8.61: nspell — pure-JS Hunspell engine used for the non-English
-// spellcheck dictionaries (Spanish/French/Italian/German). The package ships
+// spellcheck dictionaries (Spanish/French/Italian/German and, since
+// v0.8.65, Portuguese/Turkish/Russian). The package ships
 // no typings, so declare the small surface we use.
 declare module 'nspell' {
   interface NspellInstance {

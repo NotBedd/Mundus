@@ -45,7 +45,7 @@
   },
   "linux": {
     "icon": "build/icons",
-    "target": ["AppImage", "deb", "rpm", "pacman"],
+    "target": ["AppImage", "deb", "rpm"],
     "category": "Office",
     "maintainer": "Mundus Developer <dev@mundus.local>",
     "syncDesktopName": true

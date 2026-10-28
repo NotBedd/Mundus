@@ -4,6 +4,10 @@
 // engine; Spanish/French/Italian/German are checked through real Hunspell
 // dictionaries (the dictionary-* packages, the same dictionary data Chrome
 // ships) loaded ONE AT A TIME via lazy chunks (src/lib/dicts/).
+// v0.8.65: Portuguese (pt), Turkish (tr) and Russian (ru) join the Hunspell
+// family through the same lazy-chunk path (dict-pt/dict-tr/dict-ru). All
+// three ship SET UTF-8 dictionaries; the engine's tokenizer matches Unicode
+// letters (\p{L}), so accented Latin and Cyrillic text tokenize natively.
 // v0.8.62 ENGINE SWAP: nspell is GONE. Its constructor eagerly expands every
 // affix rule for every stem — with the Italian dictionary (3,233 rules ×
 // ~95k stems + continuation classes) that hung the main thread for MINUTES
@@ -123,13 +127,27 @@ export function requestSpellLanguage(lang: string): void {
   const token = ++loadToken;
   ;(async () => {
     try {
-      const dictMod = lang === 'es'
-        ? await import('./dicts/dict-es')
-        : lang === 'fr'
-          ? await import('./dicts/dict-fr')
-          : lang === 'it'
-            ? await import('./dicts/dict-it')
-            : await import('./dicts/dict-de');
+      // v0.8.65: pt/tr/ru join es/fr/it/de. Every dictionary lives in its own
+      // lazy chunk (src/lib/dicts/dict-<code>.ts) — only the requested
+      // language's module is ever fetched; unknown codes fall back to the
+      // German chunk exactly as before (legacy stored values already resolve
+      // to 'en' in getSpellLanguageSetting, so this is belt-and-braces).
+      // Structural type: each module's `lang` is its own literal, so
+      // typeof-import typing would be incompatible across chunks.
+      interface HunspellDictModule {
+        lang: string;
+        hunspell: { aff: string; dic: string };
+      }
+      const dictLoaders: Record<string, () => Promise<HunspellDictModule>> = {
+        es: () => import('./dicts/dict-es'),
+        fr: () => import('./dicts/dict-fr'),
+        it: () => import('./dicts/dict-it'),
+        de: () => import('./dicts/dict-de'),
+        pt: () => import('./dicts/dict-pt'),
+        tr: () => import('./dicts/dict-tr'),
+        ru: () => import('./dicts/dict-ru'),
+      };
+      const dictMod = await (dictLoaders[lang] ?? (() => import('./dicts/dict-de')))();
       const factory = await ensureFactory();
       // A newer request (or a switch back to English) superseded this load —
       // drop everything this invocation mounted and bail out silently.
