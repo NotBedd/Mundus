@@ -58,7 +58,7 @@ In the top bar
 - Adding images to the document, resizing and aligning them, including captions and an option to sync them online via free hosting
 - Search and replace throughout the active document
 - Speech-to-text via Whistle, fully local, useful for brainstorming sessions
-- A spelling check, spelling review drawer with the list of errors in your document and an autocorrect engine based off Harper
+- A spelling check, spelling review drawer with the list of errors in your document and an autocorrect engine based off Harper (Supported languages for spellcheck and autocorrect are English, Spanish, French, Italian, German, Portuguese, Turkish and Russian, more will come with future updates!)
 - A Timeline button to add a duration to the active document's scene, shows on the timeline in Lore Mode
 - An "In this Scene" drawer which automatically detects characters and Codex entries present in the document so you can easily reference them, keep track of who and what is involved or make a quick edit to them
 
