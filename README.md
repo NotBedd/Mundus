@@ -13,7 +13,9 @@
 
 </div>
 
-<h2 align="center"> If you end up using the app, please remember to always make backups before updating! I try my best to test and make sure things work correctly but it's impossible to guarantee it. </h2>
+<h2 align="left"> The next updates will come in some time as currently I'm very busy, the latest version has 99% of what I wanted in the app and is stable anyway so you can work with it already</h2>
+
+<h2 align="left"> If you end up using the app, please remember to always make backups before updating! I try my best to test and make sure things work correctly but it's impossible to guarantee it. </h2>
 
 ## Index
 
