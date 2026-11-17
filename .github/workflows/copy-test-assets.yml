@@ -1,0 +1,128 @@
+# .github/workflows/copy-release-assets.yml
+#
+# Copies every asset from a source release (e.g. "Test-Builder") to a
+# target release identified by its tag. Works for drafts → drafts,
+# drafts → published, published → drafts, etc.
+#
+# Usage:
+#   Actions tab → "Copy Release Assets" → Run workflow
+#     source_release_name: Test-Builder
+#     target_release_tag: v0.9.0
+#     delete_existing: true (optional)
+#
+# Required permissions: contents: write
+
+name: Copy Release Assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_release_name:
+        description: 'Exact name of the SOURCE release (e.g. Test-Builder)'
+        required: true
+        type: string
+      target_release_tag:
+        description: 'Tag of the TARGET release (e.g. v0.9.0)'
+        required: true
+        type: string
+      delete_existing:
+        description: 'Delete existing assets on the target release before copying?'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  copy-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (optional, for consistency)
+        uses: actions/checkout@v4
+
+      - name: Set up GitHub CLI
+        run: gh --version
+
+      - name: Resolve source release ID
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_NAME: ${{ inputs.source_release_name }}
+        run: |
+          # Search ALL releases (including drafts) by name
+          ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" \
+            --jq '.[] | select(.name == env.SOURCE_NAME) | .id' | head -n1)
+          if [ -z "$ID" ]; then
+            echo "::error::No release titled '$SOURCE_NAME' found."
+            exit 1
+          fi
+          echo "source_id=$ID" >> $GITHUB_OUTPUT
+          echo "Source release ID: $ID"
+
+      - name: Resolve target release ID
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ inputs.target_release_tag }}
+        run: |
+          # The /releases/tags/ endpoint works for both drafts and published
+          ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TARGET_TAG" \
+            --jq '.id' 2>/dev/null)
+          if [ -z "$ID" ]; then
+            echo "::error::No release found for tag '$TARGET_TAG'."
+            exit 1
+          fi
+          echo "target_id=$ID" >> $GITHUB_OUTPUT
+          echo "Target release ID: $ID"
+
+      - name: List source assets
+        id: list
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_ID: ${{ steps.source.outputs.source_id }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/$SOURCE_ID/assets" \
+            --jq '.[].name' > source_assets.txt
+          echo "Assets to copy:"
+          cat source_assets.txt
+          if [ ! -s source_assets.txt ]; then
+            echo "::warning::Source release has no assets."
+            exit 0
+          fi
+
+      - name: Delete existing assets on target (optional)
+        if: inputs.delete_existing == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_ID: ${{ steps.target.outputs.target_id }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/$TARGET_ID/assets" \
+            --jq '.[].id' | while read -r asset_id; do
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id"
+            done
+          echo "Deleted existing target assets."
+
+      - name: Download source assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_ID: ${{ steps.source.outputs.source_id }}
+        run: |
+          mkdir -p assets
+          while IFS= read -r name; do
+            echo "Downloading $name..."
+            gh api "repos/$GITHUB_REPOSITORY/releases/assets/$(gh api \
+              "repos/$GITHUB_REPOSITORY/releases/$SOURCE_ID/assets" \
+              --jq ".[] | select(.name == \"$name\") | .id")" \
+              -H "Accept: application/octet-stream" > "assets/$name"
+          done < source_assets.txt
+          ls -lh assets/
+
+      - name: Upload assets to target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ inputs.target_release_tag }}
+        run: |
+          # Use --clobber to overwrite if an asset with the same name exists
+          gh release upload "$TARGET_TAG" assets/* --clobber
+          echo "All assets copied to $TARGET_TAG."
